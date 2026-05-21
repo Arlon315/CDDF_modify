@@ -46,3 +46,6 @@ test_img/
 Thumbs.db
 .idea/
 .vscode/
+
+# 模型文件不上传先
+models/
