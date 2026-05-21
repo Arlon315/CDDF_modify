@@ -249,12 +249,12 @@ class BaseFuseWithSAFM(nn.Module):
             qkv_bias=qkv_bias,
         )
         self.safm = SAFM(dim, n_levels=n_levels)
-        self.proj = nn.Conv2d(dim, dim, 1)
+        # self.proj = nn.Conv2d(dim, dim, 1)
 
     def forward(self, x):
         x = self.base(x)
-        x = x + self.safm(x)
-        x = self.proj(x)
+        x = self.safm(x)
+        # x = self.proj(x)
         return x
 
 
