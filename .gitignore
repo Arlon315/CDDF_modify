@@ -1,0 +1,48 @@
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Test, coverage, and cache artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Deep-learning data, checkpoints, and generated outputs
+models/
+checkpoints/
+runs/
+logs/
+MSRS_train/
+image/
+test_img/
+*.pth
+*.pt
+*.ckpt
+*.onnx
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
