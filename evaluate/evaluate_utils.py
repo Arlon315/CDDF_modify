@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from net import (  # noqa: E402
     build_cddfuse_modules,
     fuse_detail_features,
+    infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
@@ -77,7 +78,9 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         infer_cddfuse_backbone(checkpoint),
         detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
         detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-        encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint))
+        encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
+        base_fusion=infer_cddfuse_base_fusion(checkpoint),
+    )
     encoder = encoder.to(device)
     decoder = decoder.to(device)
     base_fuse = base_fuse.to(device)
