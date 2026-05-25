@@ -24,14 +24,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+from baseUnet import BaseUNetDecoder, BaseUNetEncoder  # noqa: E402
 from net import (  # noqa: E402
-    build_cddfuse_modules,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_backbone,
-    infer_cddfuse_detail_fusion,
-    infer_cddfuse_detail_num_layers,
-    infer_cddfuse_encoder_detail_enhance_layers,
+    BaseFeatureExtraction,
+    DetailFeatureExtraction,
+    Restormer_Decoder,
+    Restormer_Encoder,
 )
 
 try:
@@ -74,36 +72,46 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
 
     checkpoint = torch.load(str(model_file), map_location=device)
 
-    encoder, decoder, base_fuse, detail_fuse = build_cddfuse_modules(
-        infer_cddfuse_backbone(checkpoint),
-        detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-        detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-        encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
-        base_fusion=infer_cddfuse_base_fusion(checkpoint),
-    )
-    encoder = encoder.to(device)
-    decoder = decoder.to(device)
-    base_fuse = base_fuse.to(device)
-    detail_fuse = detail_fuse.to(device)
+    encoder = Restormer_Encoder().to(device)
+    decoder = Restormer_Decoder().to(device)
+    base_unet_encoder = BaseUNetEncoder().to(device)
+    base_unet_decoder = BaseUNetDecoder().to(device)
+    base_fuse = BaseFeatureExtraction(dim=64, num_heads=8).to(device)
+    detail_fuse = DetailFeatureExtraction(num_layers=1).to(device)
 
     encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
+    if "BaseUNetEncoder" not in checkpoint or "BaseUNetDecoder" not in checkpoint:
+        raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+    base_unet_encoder.load_state_dict(_strip_module_prefix(checkpoint["BaseUNetEncoder"]))
+    base_unet_decoder.load_state_dict(_strip_module_prefix(checkpoint["BaseUNetDecoder"]))
     decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
     base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
     detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))
 
     encoder.eval()
+    base_unet_encoder.eval()
+    base_unet_decoder.eval()
     decoder.eval()
     base_fuse.eval()
     detail_fuse.eval()
 
     bundle = {
         "encoder": encoder,
+        "base_unet_encoder": base_unet_encoder,
+        "base_unet_decoder": base_unet_decoder,
         "decoder": decoder,
         "base_fuse": base_fuse,
         "detail_fuse": detail_fuse,
     }
     _MODEL_CACHE[cache_key] = bundle
     return bundle
+
+
+def _extract_base_detail_features(bundle: Dict[str, torch.nn.Module], input_tensor: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    detail_feature, shared_feature = bundle["encoder"](input_tensor)
+    base_shallow, base_mid, base_deep = bundle["base_unet_encoder"](shared_feature)
+    base_feature = bundle["base_unet_decoder"](base_shallow, base_mid, base_deep)
+    return base_feature, detail_feature, shared_feature
 
 
 def _parse_hw(size_value: Any) -> Optional[Tuple[int, int]]:
@@ -278,10 +286,10 @@ def run_fusion_prediction(
     decoder_input = _build_decoder_input(decoder_input_mode, vis_tensor, ir_tensor)
 
     with torch.no_grad():
-        feature_v_b, feature_v_d, _ = bundle["encoder"](vis_tensor)
-        feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
+        feature_v_b, feature_v_d, _ = _extract_base_detail_features(bundle, vis_tensor)
+        feature_i_b, feature_i_d, _ = _extract_base_detail_features(bundle, ir_tensor)
         feature_f_b = bundle["base_fuse"](feature_v_b + feature_i_b)
-        feature_f_d = fuse_detail_features(bundle["detail_fuse"], feature_i_d, feature_v_d)
+        feature_f_d = bundle["detail_fuse"](feature_v_d + feature_i_d)
         fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
         fused_tensor = _normalize_fused_tensor(fused_tensor)
 

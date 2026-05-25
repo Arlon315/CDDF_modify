@@ -1,11 +1,5 @@
-from net import (
-    build_cddfuse_modules,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_backbone,
-    infer_cddfuse_detail_fusion,
-    infer_cddfuse_detail_num_layers,
-)
+from baseUnet import BaseUNetDecoder, BaseUNetEncoder
+from net import BaseFeatureExtraction, DetailFeatureExtraction, Restormer_Decoder, Restormer_Encoder
 import os
 import numpy as np
 from utils.Evaluator import Evaluator
@@ -20,6 +14,26 @@ import cv2
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 CDDFuse_path=r"models/CDDFuse_IVF.pth"
 CDDFuse_MIF_path=r"models/CDDFuse_MIF.pth"
+
+
+def infer_encoder_detail_num_layers(checkpoint):
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    layer_indices = []
+    for key in encoder_state.keys():
+        key = key[7:] if isinstance(key, str) and key.startswith('module.') else key
+        parts = str(key).split('.')
+        if len(parts) > 2 and parts[0] == 'detailFeature' and parts[1] == 'net' and parts[2].isdigit():
+            layer_indices.append(int(parts[2]))
+    return max(layer_indices) + 1 if layer_indices else 3
+
+
+def extract_base_detail_features(encoder, base_unet_encoder, base_unet_decoder, input_tensor):
+    detail_feature, shared_feature = encoder(input_tensor)
+    base_shallow, base_mid, base_deep = base_unet_encoder(shared_feature)
+    base_feature = base_unet_decoder(base_shallow, base_mid, base_deep)
+    return base_feature, detail_feature, shared_feature
+
+
 for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]: 
     print("\n"*2+"="*80)
     print("The test result of "+dataset_name+" :")
@@ -32,22 +46,29 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(ckpt_path, map_location=device)
-        encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
-            infer_cddfuse_backbone(checkpoint),
-            detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            base_fusion=infer_cddfuse_base_fusion(checkpoint),
-        )
+        encoder_module = Restormer_Encoder()
+        encoder_module.detailFeature = DetailFeatureExtraction(num_layers=infer_encoder_detail_num_layers(checkpoint))
+        decoder_module = Restormer_Decoder()
+        base_fuse_module = BaseFeatureExtraction(dim=64, num_heads=8)
+        detail_fuse_module = DetailFeatureExtraction(num_layers=1)
         Encoder = nn.DataParallel(encoder_module).to(device)
+        BaseUNet_Encoder = nn.DataParallel(BaseUNetEncoder()).to(device)
+        BaseUNet_Decoder = nn.DataParallel(BaseUNetDecoder()).to(device)
         Decoder = nn.DataParallel(decoder_module).to(device)
         BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
         DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
 
         Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
+        if 'BaseUNetEncoder' not in checkpoint or 'BaseUNetDecoder' not in checkpoint:
+            raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+        BaseUNet_Encoder.load_state_dict(checkpoint['BaseUNetEncoder'])
+        BaseUNet_Decoder.load_state_dict(checkpoint['BaseUNetDecoder'])
         Decoder.load_state_dict(checkpoint['DIDF_Decoder'])
         BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
         DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
         Encoder.eval()
+        BaseUNet_Encoder.eval()
+        BaseUNet_Decoder.eval()
         Decoder.eval()
         BaseFuseLayer.eval()
         DetailFuseLayer.eval()
@@ -60,10 +81,12 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
                 data_IR,data_VIS = torch.FloatTensor(data_IR),torch.FloatTensor(data_VIS)
                 data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
 
-                feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
-                feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
+                feature_V_B, feature_V_D, feature_V = extract_base_detail_features(
+                    Encoder, BaseUNet_Encoder, BaseUNet_Decoder, data_VIS)
+                feature_I_B, feature_I_D, feature_I = extract_base_detail_features(
+                    Encoder, BaseUNet_Encoder, BaseUNet_Decoder, data_IR)
                 feature_F_B = BaseFuseLayer(feature_V_B + feature_I_B)
-                feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
+                feature_F_D = DetailFuseLayer(feature_I_D + feature_V_D)
                 if ckpt_path==CDDFuse_path:
                     data_Fuse, _ = Decoder(data_IR+data_VIS, feature_F_B, feature_F_D)
                 else:

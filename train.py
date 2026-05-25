@@ -6,6 +6,7 @@ Import packages
 ------------------------------------------------------------------------------
 '''
 
+from baseUnet import BaseUNetDecoder, BaseUNetEncoder
 from net import Restormer_Encoder, Restormer_Decoder, BaseFeatureExtraction, DetailFeatureExtraction
 from utils.dataset import H5Dataset
 import argparse
@@ -62,12 +63,19 @@ optim_gamma = 0.5
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 DIDF_Encoder = nn.DataParallel(Restormer_Encoder()).to(device)
 DIDF_Decoder = nn.DataParallel(Restormer_Decoder()).to(device)
+BaseUNet_Encoder = nn.DataParallel(BaseUNetEncoder()).to(device)
+BaseUNet_Decoder = nn.DataParallel(BaseUNetDecoder()).to(device)
 BaseFuseLayer = nn.DataParallel(BaseFeatureExtraction(dim=64, num_heads=8)).to(device)
 DetailFuseLayer = nn.DataParallel(DetailFeatureExtraction(num_layers=1)).to(device)
 
 # optimizer, scheduler and loss function
 optimizer1 = torch.optim.Adam(
-    DIDF_Encoder.parameters(), lr=lr, weight_decay=weight_decay)
+    list(DIDF_Encoder.parameters()) +
+    list(BaseUNet_Encoder.parameters()) +
+    list(BaseUNet_Decoder.parameters()),
+    lr=lr,
+    weight_decay=weight_decay,
+)
 optimizer2 = torch.optim.Adam(
     DIDF_Decoder.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer3 = torch.optim.Adam(
@@ -103,6 +111,8 @@ def build_checkpoint(epoch):
         'epoch': epoch,
         'timestamp': timestamp,
         'DIDF_Encoder': DIDF_Encoder.state_dict(),
+        'BaseUNetEncoder': BaseUNet_Encoder.state_dict(),
+        'BaseUNetDecoder': BaseUNet_Decoder.state_dict(),
         'DIDF_Decoder': DIDF_Decoder.state_dict(),
         'BaseFuseLayer': BaseFuseLayer.state_dict(),
         'DetailFuseLayer': DetailFuseLayer.state_dict(),
@@ -131,6 +141,10 @@ if args.resume:
     resume_path = os.path.expanduser(args.resume)
     checkpoint = torch.load(resume_path, map_location=device)
     DIDF_Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
+    if 'BaseUNetEncoder' not in checkpoint or 'BaseUNetDecoder' not in checkpoint:
+        raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+    BaseUNet_Encoder.load_state_dict(checkpoint['BaseUNetEncoder'])
+    BaseUNet_Decoder.load_state_dict(checkpoint['BaseUNetDecoder'])
     DIDF_Decoder.load_state_dict(checkpoint['DIDF_Decoder'])
     BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
     DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
@@ -146,6 +160,13 @@ if args.resume:
         scheduler4.load_state_dict(checkpoint['scheduler4'])
     start_epoch = int(checkpoint.get('epoch', 0))
     print(f"Resumed from {resume_path} at epoch {start_epoch}.")
+
+
+def extract_base_detail_features(input_tensor):
+    detail_feature, shared_feature = DIDF_Encoder(input_tensor)
+    base_shallow, base_mid, base_deep = BaseUNet_Encoder(shared_feature)
+    base_feature = BaseUNet_Decoder(base_shallow, base_mid, base_deep)
+    return base_feature, detail_feature, shared_feature
 
 '''
 ------------------------------------------------------------------------------
@@ -163,11 +184,15 @@ for epoch in range(start_epoch, num_epochs):
         data_VIS, data_IR = data_VIS.cuda(), data_IR.cuda()
         DIDF_Encoder.train()
         DIDF_Decoder.train()
+        BaseUNet_Encoder.train()
+        BaseUNet_Decoder.train()
         BaseFuseLayer.train()
         DetailFuseLayer.train()
 
         DIDF_Encoder.zero_grad()
         DIDF_Decoder.zero_grad()
+        BaseUNet_Encoder.zero_grad()
+        BaseUNet_Decoder.zero_grad()
         BaseFuseLayer.zero_grad()
         DetailFuseLayer.zero_grad()
 
@@ -177,8 +202,8 @@ for epoch in range(start_epoch, num_epochs):
         optimizer4.zero_grad()
 
         if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _ = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, _ = DIDF_Encoder(data_IR)
+            feature_V_B, feature_V_D, _ = extract_base_detail_features(data_VIS)
+            feature_I_B, feature_I_D, _ = extract_base_detail_features(data_IR)
             data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_B, feature_V_D)
             data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_B, feature_I_D)
 
@@ -199,12 +224,16 @@ for epoch in range(start_epoch, num_epochs):
             nn.utils.clip_grad_norm_(
                 DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
+                BaseUNet_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                BaseUNet_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             optimizer1.step()  
             optimizer2.step()
         else:  #Phase II
-            feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
+            feature_V_B, feature_V_D, feature_V = extract_base_detail_features(data_VIS)
+            feature_I_B, feature_I_D, feature_I = extract_base_detail_features(data_IR)
             feature_F_B = BaseFuseLayer(feature_I_B+feature_V_B)
             feature_F_D = DetailFuseLayer(feature_I_D+feature_V_D)
             data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
@@ -222,6 +251,10 @@ for epoch in range(start_epoch, num_epochs):
             loss.backward()
             nn.utils.clip_grad_norm_(
                 DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                BaseUNet_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                BaseUNet_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(

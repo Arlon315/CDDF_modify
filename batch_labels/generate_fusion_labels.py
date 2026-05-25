@@ -322,6 +322,8 @@ class CDDFuseAdapter(BaseFusionAdapter):
     ) -> None:
         super().__init__(checkpoint_path, device, input_size, amp, decoder_input_mode)
         self.encoder = None
+        self.base_unet_encoder = None
+        self.base_unet_decoder = None
         self.decoder = None
         self.base_fuse = None
         self.detail_fuse = None
@@ -340,12 +342,12 @@ class CDDFuseAdapter(BaseFusionAdapter):
             return
 
         try:
+            from baseUnet import BaseUNetDecoder, BaseUNetEncoder  # pylint: disable=import-outside-toplevel
             from net import (  # pylint: disable=import-outside-toplevel
-                build_cddfuse_modules,
-                fuse_detail_features,
-                infer_cddfuse_backbone,
-                infer_cddfuse_detail_fusion,
-                infer_cddfuse_detail_num_layers,
+                BaseFeatureExtraction,
+                DetailFeatureExtraction,
+                Restormer_Decoder,
+                Restormer_Encoder,
             )
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
@@ -355,26 +357,44 @@ class CDDFuseAdapter(BaseFusionAdapter):
 
         checkpoint = torch.load(str(self.checkpoint_path), map_location=self.device)
 
-        self.encoder, self.decoder, self.base_fuse, self.detail_fuse = build_cddfuse_modules(
-            infer_cddfuse_backbone(checkpoint),
-            detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint))
-        self.fuse_detail_features = fuse_detail_features
+        self.encoder = Restormer_Encoder()
+        self.base_unet_encoder = BaseUNetEncoder()
+        self.base_unet_decoder = BaseUNetDecoder()
+        self.decoder = Restormer_Decoder()
+        self.base_fuse = BaseFeatureExtraction(dim=64, num_heads=8)
+        self.detail_fuse = DetailFeatureExtraction(num_layers=1)
         self.encoder = self.encoder.to(self.device)
+        self.base_unet_encoder = self.base_unet_encoder.to(self.device)
+        self.base_unet_decoder = self.base_unet_decoder.to(self.device)
         self.decoder = self.decoder.to(self.device)
         self.base_fuse = self.base_fuse.to(self.device)
         self.detail_fuse = self.detail_fuse.to(self.device)
 
         self.encoder.load_state_dict(self._strip_module_prefix(checkpoint["DIDF_Encoder"]))
+        if "BaseUNetEncoder" not in checkpoint or "BaseUNetDecoder" not in checkpoint:
+            raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+        self.base_unet_encoder.load_state_dict(self._strip_module_prefix(checkpoint["BaseUNetEncoder"]))
+        self.base_unet_decoder.load_state_dict(self._strip_module_prefix(checkpoint["BaseUNetDecoder"]))
         self.decoder.load_state_dict(self._strip_module_prefix(checkpoint["DIDF_Decoder"]))
         self.base_fuse.load_state_dict(self._strip_module_prefix(checkpoint["BaseFuseLayer"]))
         self.detail_fuse.load_state_dict(self._strip_module_prefix(checkpoint["DetailFuseLayer"]))
 
         self.encoder.eval()
+        self.base_unet_encoder.eval()
+        self.base_unet_decoder.eval()
         self.decoder.eval()
         self.base_fuse.eval()
         self.detail_fuse.eval()
         self._loaded = True
+
+    def _extract_base_detail_features(self, input_tensor: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        assert self.encoder is not None
+        assert self.base_unet_encoder is not None
+        assert self.base_unet_decoder is not None
+        detail_feature, shared_feature = self.encoder(input_tensor)
+        base_shallow, base_mid, base_deep = self.base_unet_encoder(shared_feature)
+        base_feature = self.base_unet_decoder(base_shallow, base_mid, base_deep)
+        return base_feature, detail_feature, shared_feature
 
     def _read_gray(self, path: Path) -> np.ndarray:
         image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
@@ -405,6 +425,8 @@ class CDDFuseAdapter(BaseFusionAdapter):
     def fuse_pair(self, ir_path: Path, vis_path: Path) -> np.ndarray:
         self.load()
         assert self.encoder is not None
+        assert self.base_unet_encoder is not None
+        assert self.base_unet_decoder is not None
         assert self.decoder is not None
         assert self.base_fuse is not None
         assert self.detail_fuse is not None
@@ -436,10 +458,10 @@ class CDDFuseAdapter(BaseFusionAdapter):
         )
         with torch.inference_mode():
             with amp_context:
-                feature_v_b, feature_v_d, _ = self.encoder(vis_tensor)
-                feature_i_b, feature_i_d, _ = self.encoder(ir_tensor)
+                feature_v_b, feature_v_d, _ = self._extract_base_detail_features(vis_tensor)
+                feature_i_b, feature_i_d, _ = self._extract_base_detail_features(ir_tensor)
                 feature_f_b = self.base_fuse(feature_v_b + feature_i_b)
-                feature_f_d = self.fuse_detail_features(self.detail_fuse, feature_i_d, feature_v_d)
+                feature_f_d = self.detail_fuse(feature_i_d + feature_v_d)
                 fused_tensor, _ = self.decoder(decoder_input, feature_f_b, feature_f_d)
                 fused_tensor = self._normalize_output(fused_tensor)
 

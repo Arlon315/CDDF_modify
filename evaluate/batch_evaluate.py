@@ -102,7 +102,7 @@ def get_project_defaults() -> Mapping[str, object]:
             "TNO": {
                 "ir_dir": "test_img/TNO/ir",
                 "vis_dir": "test_img/TNO/vi",
-                "num_pairs": 1,
+                "num_pairs": 25,
                 "task": "ivf",
                 "default_model_path": "models/CDDFuse_IVF.pth",
             },
@@ -142,7 +142,7 @@ def get_project_defaults() -> Mapping[str, object]:
             "21_pairs_tno": {
                 "ir_dir": "image/21_pairs_tno/ir",
                 "vis_dir": "image/21_pairs_tno/vis",
-                "num_pairs": 1,
+                "num_pairs": 21,
             },
             "40_vot_tno": {
                 "ir_dir": "image/40_vot_tno/ir",
@@ -171,13 +171,12 @@ def get_project_defaults() -> Mapping[str, object]:
             },
         },
         "default_dataset": "RoadScence",
-        "default_model_path": "models/Res_CGA_DEConv_baseSAFM1/restormer_cga_baseSAFM_decoder_filter_05-21-15-21_epoch_070.pth",
+        "default_model_path": "models/CDDFuse_05-13-16-32_epoch_120.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,
         "default_use_test": True,
         "default_save_fused": True,
-        "default_save_rgb": True,
         "default_eval_size": "0",
         "default_input_size": "0",
     }
@@ -295,17 +294,6 @@ def to_u8_image(image: Any) -> np.ndarray:
     return (np.clip(array, 0.0, 255.0) + 0.5).astype(np.uint8)
 
 
-def to_gray_u8_image(image: Any) -> np.ndarray:
-    image_u8 = np.squeeze(to_u8_image(image))
-    if image_u8.ndim == 2:
-        return image_u8
-    if image_u8.ndim == 3 and image_u8.shape[2] == 1:
-        return image_u8[:, :, 0]
-    if image_u8.ndim == 3 and image_u8.shape[2] >= 3:
-        return cv2.cvtColor(image_u8[:, :, :3], cv2.COLOR_BGR2GRAY)
-    raise ValueError(f"Unsupported grayscale conversion shape: {image_u8.shape}")
-
-
 def to_float01_image(image: Any) -> np.ndarray:
     array = np.squeeze(to_numpy_array(image)).astype(np.float32, copy=False)
     if array.min() >= -1.0 and array.max() <= 1.0 and array.min() < 0.0:
@@ -326,54 +314,11 @@ def read_image_for_eval(path: str) -> np.ndarray:
     return image
 
 
-def read_visible_color_for_rgb_save(path: str) -> Optional[np.ndarray]:
-    image_path = Path(resolve_project_path(path))
-    if not image_path.exists():
-        raise FileNotFoundError(path)
-    image_data = np.frombuffer(image_path.read_bytes(), dtype=np.uint8)
-    image = cv2.imdecode(image_data, cv2.IMREAD_UNCHANGED)
-    if image is None:
-        raise ValueError(f"Failed to read image: {image_path}")
-    if image.ndim != 3 or image.shape[2] < 3:
-        return None
-    if image.shape[2] == 4:
-        return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
-    return image[:, :, :3]
-
-
 def resize_image_like_eval(image: np.ndarray, eval_hw: Optional[Tuple[int, int]]) -> np.ndarray:
     if eval_hw is None or image.shape[:2] == eval_hw:
         return image
     height, width = eval_hw
     return cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
-
-
-def save_rgb_fused_image(output_path: str, fused_luma: Any, vis_path: str) -> bool:
-    visible_bgr = read_visible_color_for_rgb_save(vis_path)
-    if visible_bgr is None:
-        return False
-
-    fused_y = to_gray_u8_image(fused_luma)
-    if visible_bgr.shape[:2] != fused_y.shape[:2]:
-        visible_bgr = cv2.resize(
-            visible_bgr,
-            (int(fused_y.shape[1]), int(fused_y.shape[0])),
-            interpolation=cv2.INTER_LINEAR,
-        )
-
-    ycrcb = cv2.cvtColor(visible_bgr, cv2.COLOR_BGR2YCrCb)
-    ycrcb[:, :, 0] = fused_y
-    fused_bgr = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
-
-    rgb_output_path = Path(resolve_project_path(output_path))
-    rgb_output_path.parent.mkdir(parents=True, exist_ok=True)
-    extension = rgb_output_path.suffix or ".png"
-    ok, encoded = cv2.imencode(extension, fused_bgr)
-    if not ok:
-        raise IOError(f"Failed to encode RGB fused image: {rgb_output_path}")
-    with rgb_output_path.open("wb") as handle:
-        handle.write(encoded.tobytes())
-    return True
 
 
 def build_eval_bundle_from_saved_output(
@@ -388,7 +333,7 @@ def build_eval_bundle_from_saved_output(
     eval_hw = resolve_hw(eval_size, fused_img.shape[:2]) if parse_size_arg(eval_size) else None
     ir_eval = resize_image_like_eval(to_u8_image(ir_img), eval_hw)
     vis_eval = resize_image_like_eval(to_u8_image(vis_img), eval_hw)
-    fused_eval = resize_image_like_eval(to_gray_u8_image(fused_img), eval_hw)
+    fused_eval = resize_image_like_eval(to_u8_image(fused_img), eval_hw)
     return to_float01_image(fused_eval), ir_eval, vis_eval
 
 
@@ -637,8 +582,6 @@ def build_metadata(
         "num_pairs_successful": int(successful_pairs),
         "num_pairs_failed": int(failed_pairs),
         "save_fused": bool(args.save_fused),
-        "save_rgb": bool(args.save_rgb),
-        "rgb_save_mode": "YCrCb fused-Y with visible Cr/Cb" if args.save_rgb else "disabled",
         "seed": int(args.seed),
         "file_extensions": list(args.file_extensions),
         "fusion_params": dict(args.fusion_params),
@@ -709,15 +652,6 @@ def build_arg_parser(project_defaults: Mapping[str, object]) -> argparse.Argumen
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=project_defaults["default_debug"])
     parser.add_argument("--use_test", action=argparse.BooleanOptionalAction, default=project_defaults["default_use_test"])
     parser.add_argument("--save_fused", action=argparse.BooleanOptionalAction, default=project_defaults["default_save_fused"])
-    parser.add_argument(
-        "--save_rgb",
-        action=argparse.BooleanOptionalAction,
-        default=project_defaults["default_save_rgb"],
-        help=(
-            "Save fused outputs as RGB/color images by replacing the visible "
-            "YCrCb luminance channel with the fused result."
-        ),
-    )
     return parser
 
 
@@ -778,7 +712,6 @@ def main() -> None:
     print(f"Eval size:      {format_size_arg(args.eval_size)}")
     print(f"Input size:     {format_size_arg(args.input_size)}")
     print(f"Save fused:     {args.save_fused}")
-    print(f"Save RGB:       {args.save_rgb}")
     print(f"Matched pairs:  {len(image_pairs)}")
     print("-" * 72)
 
@@ -786,14 +719,12 @@ def main() -> None:
         print("No matched infrared-visible pairs were found.")
         return
 
-    if args.save_fused or args.save_rgb:
+    if args.save_fused:
         Path(args.fused_dir).mkdir(parents=True, exist_ok=True)
     Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
 
     eval_items: List[Tuple[str, np.ndarray, np.ndarray, np.ndarray]] = []
     failed_items: List[str] = []
-    rgb_saved = 0
-    rgb_skipped = 0
 
     for index, (ir_path, vis_path) in enumerate(image_pairs, start=1):
         filename = Path(ir_path).stem
@@ -812,7 +743,7 @@ def main() -> None:
             eval_size=args.eval_size,
             use_test=args.use_test,
             input_size=args.input_size,
-            save_output=args.save_fused or args.save_rgb,
+            save_output=args.save_fused,
             fusion_params=args.fusion_params,
             runner_extra_kwargs=args.runner_kwargs,
         )
@@ -820,25 +751,12 @@ def main() -> None:
         if ok and bundle is not None:
             fused_float01, ir_eval_u8, vis_eval_u8 = bundle
             eval_items.append((filename, ir_eval_u8, vis_eval_u8, fused_float01))
-            if args.save_rgb:
-                try:
-                    if save_rgb_fused_image(output_path, fused_float01, vis_path):
-                        rgb_saved += 1
-                    else:
-                        rgb_skipped += 1
-                        print(f"RGB save skipped: {filename} visible image has no color channels.")
-                except Exception as exc:
-                    rgb_skipped += 1
-                    print(f"RGB save failed: {filename}: {exc}")
         else:
             failed_items.append(filename)
 
     print("-" * 72)
     print(f"Fusion success: {len(eval_items)}")
     print(f"Fusion failed:  {len(failed_items)}")
-    if args.save_rgb:
-        print(f"RGB saved:      {rgb_saved}")
-        print(f"RGB skipped:    {rgb_skipped}")
 
     if not eval_items:
         print("No fused outputs were available for evaluation.")

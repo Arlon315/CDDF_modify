@@ -351,15 +351,13 @@ class Restormer_Encoder(nn.Module):
 
         self.encoder_level1 = nn.Sequential(*[TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
                                             bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
-        self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads = heads[2])
         self.detailFeature = DetailFeatureExtraction()
              
     def forward(self, inp_img):
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
-        base_feature = self.baseFeature(out_enc_level1)
         detail_feature = self.detailFeature(out_enc_level1)
-        return base_feature, detail_feature, out_enc_level1
+        return detail_feature, out_enc_level1
 
 class Restormer_Decoder(nn.Module):
     def __init__(self,
@@ -400,4 +398,3 @@ if __name__ == '__main__':
     window_size = 8
     modelE = Restormer_Encoder().cuda()
     modelD = Restormer_Decoder().cuda()
-
