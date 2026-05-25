@@ -42,11 +42,11 @@ args = parser.parse_args()
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
-epoch_gap = 40  # epoches of Phase I 
+epoch_gap = 30  # epoches of Phase I 
 
 lr = 1e-4
 weight_decay = 0
-batch_size = 16
+batch_size = 8
 GPU_number = os.environ['CUDA_VISIBLE_DEVICES']
 # Coefficients of the loss function
 coeff_mse_loss_VF = 1. # alpha1
@@ -166,7 +166,18 @@ def extract_base_detail_features(input_tensor):
     detail_feature, shared_feature = DIDF_Encoder(input_tensor)
     base_shallow, base_mid, base_deep = BaseUNet_Encoder(shared_feature)
     base_feature = BaseUNet_Decoder(base_shallow, base_mid, base_deep)
-    return base_feature, detail_feature, shared_feature
+    return base_feature, detail_feature, shared_feature, (base_shallow, base_mid, base_deep)
+
+
+def calc_base_cc_loss(visible_base_features, infrared_base_features):
+    V_B_s, V_B_m, V_B_d = visible_base_features
+    I_B_s, I_B_m, I_B_d = infrared_base_features
+
+    cc_B_s = cc(V_B_s, I_B_s)
+    cc_B_m = cc(V_B_m, I_B_m)
+    cc_B_d = cc(V_B_d, I_B_d)
+
+    return 0.5 * cc_B_s + 0.3 * cc_B_m + 0.2 * cc_B_d
 
 '''
 ------------------------------------------------------------------------------
@@ -180,6 +191,8 @@ prev_time = time.time()
 
 for epoch in range(start_epoch, num_epochs):
     ''' train '''
+    epoch_loss = 0.0
+    epoch_batches = 0
     for i, (data_VIS, data_IR) in enumerate(loader['train']):
         data_VIS, data_IR = data_VIS.cuda(), data_IR.cuda()
         DIDF_Encoder.train()
@@ -202,12 +215,12 @@ for epoch in range(start_epoch, num_epochs):
         optimizer4.zero_grad()
 
         if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _ = extract_base_detail_features(data_VIS)
-            feature_I_B, feature_I_D, _ = extract_base_detail_features(data_IR)
+            feature_V_B, feature_V_D, _, feature_V_B_levels = extract_base_detail_features(data_VIS)
+            feature_I_B, feature_I_D, _, feature_I_B_levels = extract_base_detail_features(data_IR)
             data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_B, feature_V_D)
             data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_B, feature_I_D)
 
-            cc_loss_B = cc(feature_V_B, feature_I_B)
+            cc_loss_B = calc_base_cc_loss(feature_V_B_levels, feature_I_B_levels)
             cc_loss_D = cc(feature_V_D, feature_I_D)
             mse_loss_V = 5 * Loss_ssim(data_VIS, data_VIS_hat) + MSELoss(data_VIS, data_VIS_hat)
             mse_loss_I = 5 * Loss_ssim(data_IR, data_IR_hat) + MSELoss(data_IR, data_IR_hat)
@@ -232,8 +245,8 @@ for epoch in range(start_epoch, num_epochs):
             optimizer1.step()  
             optimizer2.step()
         else:  #Phase II
-            feature_V_B, feature_V_D, feature_V = extract_base_detail_features(data_VIS)
-            feature_I_B, feature_I_D, feature_I = extract_base_detail_features(data_IR)
+            feature_V_B, feature_V_D, feature_V, feature_V_B_levels = extract_base_detail_features(data_VIS)
+            feature_I_B, feature_I_D, feature_I, feature_I_B_levels = extract_base_detail_features(data_IR)
             feature_F_B = BaseFuseLayer(feature_I_B+feature_V_B)
             feature_F_D = DetailFuseLayer(feature_I_D+feature_V_D)
             data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
@@ -242,10 +255,10 @@ for epoch in range(start_epoch, num_epochs):
             mse_loss_V = 5*Loss_ssim(data_VIS, data_Fuse) + MSELoss(data_VIS, data_Fuse)
             mse_loss_I = 5*Loss_ssim(data_IR,  data_Fuse) + MSELoss(data_IR,  data_Fuse)
 
-            cc_loss_B = cc(feature_V_B, feature_I_B)
+            cc_loss_B = calc_base_cc_loss(feature_V_B_levels, feature_I_B_levels)
             cc_loss_D = cc(feature_V_D, feature_I_D)
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
-            fusionloss, _,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
+            fusionloss, _, _, _  = criteria_fusion(data_VIS, data_IR, data_Fuse)
             
             loss = fusionloss + coeff_decomp * loss_decomp
             loss.backward()
@@ -266,6 +279,10 @@ for epoch in range(start_epoch, num_epochs):
             optimizer3.step()
             optimizer4.step()
 
+        current_loss = loss.item()
+        epoch_loss += current_loss
+        epoch_batches += 1
+
         # Determine approximate time left
         batches_done = epoch * len(loader['train']) + i
         batches_left = num_epochs * len(loader['train']) - batches_done
@@ -278,10 +295,16 @@ for epoch in range(start_epoch, num_epochs):
                 num_epochs,
                 i,
                 len(loader['train']),
-                loss.item(),
+                current_loss,
                 time_left,
             )
         )
+
+    avg_epoch_loss = epoch_loss / epoch_batches if epoch_batches > 0 else 0.0
+    print(
+        "\n[Epoch %d/%d] [avg_loss: %f]"
+        % (epoch + 1, num_epochs, avg_epoch_loss)
+    )
 
     # adjust the learning rate
 
