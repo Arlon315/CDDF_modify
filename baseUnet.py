@@ -190,6 +190,14 @@ class BaseUNetDecoder(nn.Module):
     ):
         super().__init__()
 
+        self.deep_trans = TransformerBlock(
+            dim=deep_dim,
+            num_heads=num_heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+        )
+
         self.up_mid = UpCatTransformer(
             up_ch=deep_dim,
             skip_ch=mid_dim,
@@ -214,6 +222,7 @@ class BaseUNetDecoder(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, shallow, mid, deep, residual=None):
+        deep = self.deep_trans(deep) 
         x = self.up_mid(deep, mid)
         x = self.up_shallow(x, shallow)
         x = self.out_proj(x)
