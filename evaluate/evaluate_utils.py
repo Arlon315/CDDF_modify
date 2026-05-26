@@ -25,8 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from baseUnet import BaseUNetDecoder, BaseUNetEncoder  # noqa: E402
+from base_fusion import MultiScaleBaseFusion  # noqa: E402
 from net import (  # noqa: E402
-    BaseFeatureExtraction,
     DetailFeatureExtraction,
     Restormer_Decoder,
     Restormer_Encoder,
@@ -76,23 +76,25 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
     decoder = Restormer_Decoder().to(device)
     base_unet_encoder = BaseUNetEncoder().to(device)
     base_unet_decoder = BaseUNetDecoder().to(device)
-    base_fuse = BaseFeatureExtraction(dim=64, num_heads=8).to(device)
+    base_fusion = MultiScaleBaseFusion(dim=64, mid_dim=96, deep_dim=128).to(device)
     detail_fuse = DetailFeatureExtraction(num_layers=1).to(device)
 
     encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
     if "BaseUNetEncoder" not in checkpoint or "BaseUNetDecoder" not in checkpoint:
         raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+    if "BaseFusionLayer" not in checkpoint:
+        raise KeyError("Checkpoint is missing BaseFusionLayer state dict. Old BaseFuseLayer checkpoints are not compatible with MultiScaleBaseFusion.")
     base_unet_encoder.load_state_dict(_strip_module_prefix(checkpoint["BaseUNetEncoder"]))
     base_unet_decoder.load_state_dict(_strip_module_prefix(checkpoint["BaseUNetDecoder"]))
     decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
-    base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
+    base_fusion.load_state_dict(_strip_module_prefix(checkpoint["BaseFusionLayer"]))
     detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))
 
     encoder.eval()
     base_unet_encoder.eval()
     base_unet_decoder.eval()
     decoder.eval()
-    base_fuse.eval()
+    base_fusion.eval()
     detail_fuse.eval()
 
     bundle = {
@@ -100,18 +102,25 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         "base_unet_encoder": base_unet_encoder,
         "base_unet_decoder": base_unet_decoder,
         "decoder": decoder,
-        "base_fuse": base_fuse,
+        "base_fusion": base_fusion,
         "detail_fuse": detail_fuse,
     }
     _MODEL_CACHE[cache_key] = bundle
     return bundle
 
 
-def _extract_base_detail_features(bundle: Dict[str, torch.nn.Module], input_tensor: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _extract_base_detail_features(bundle: Dict[str, torch.nn.Module], input_tensor: torch.Tensor) -> Dict[str, torch.Tensor]:
     detail_feature, shared_feature = bundle["encoder"](input_tensor)
     base_shallow, base_mid, base_deep = bundle["base_unet_encoder"](shared_feature)
     base_feature = bundle["base_unet_decoder"](base_shallow, base_mid, base_deep)
-    return base_feature, detail_feature, shared_feature
+    return {
+        "base_feature": base_feature,
+        "base_shallow": base_shallow,
+        "base_mid": base_mid,
+        "base_deep": base_deep,
+        "detail_feature": detail_feature,
+        "shared_feature": shared_feature,
+    }
 
 
 def _parse_hw(size_value: Any) -> Optional[Tuple[int, int]]:
@@ -286,10 +295,18 @@ def run_fusion_prediction(
     decoder_input = _build_decoder_input(decoder_input_mode, vis_tensor, ir_tensor)
 
     with torch.no_grad():
-        feature_v_b, feature_v_d, _ = _extract_base_detail_features(bundle, vis_tensor)
-        feature_i_b, feature_i_d, _ = _extract_base_detail_features(bundle, ir_tensor)
-        feature_f_b = bundle["base_fuse"](feature_v_b + feature_i_b)
-        feature_f_d = bundle["detail_fuse"](feature_v_d + feature_i_d)
+        feat_v = _extract_base_detail_features(bundle, vis_tensor)
+        feat_i = _extract_base_detail_features(bundle, ir_tensor)
+        F_B_s, F_B_m, F_B_d = bundle["base_fusion"](
+            feat_i["base_shallow"],
+            feat_i["base_mid"],
+            feat_i["base_deep"],
+            feat_v["base_shallow"],
+            feat_v["base_mid"],
+            feat_v["base_deep"],
+        )
+        feature_f_b = bundle["base_unet_decoder"](F_B_s, F_B_m, F_B_d)
+        feature_f_d = bundle["detail_fuse"](feat_i["detail_feature"] + feat_v["detail_feature"])
         fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
         fused_tensor = _normalize_fused_tensor(fused_tensor)
 

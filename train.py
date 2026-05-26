@@ -7,7 +7,8 @@ Import packages
 '''
 
 from baseUnet import BaseUNetDecoder, BaseUNetEncoder
-from net import Restormer_Encoder, Restormer_Decoder, BaseFeatureExtraction, DetailFeatureExtraction
+from base_fusion import MultiScaleBaseFusion
+from net import Restormer_Encoder, Restormer_Decoder, DetailFeatureExtraction
 from utils.dataset import H5Dataset
 import argparse
 import os
@@ -65,7 +66,7 @@ DIDF_Encoder = nn.DataParallel(Restormer_Encoder()).to(device)
 DIDF_Decoder = nn.DataParallel(Restormer_Decoder()).to(device)
 BaseUNet_Encoder = nn.DataParallel(BaseUNetEncoder()).to(device)
 BaseUNet_Decoder = nn.DataParallel(BaseUNetDecoder()).to(device)
-BaseFuseLayer = nn.DataParallel(BaseFeatureExtraction(dim=64, num_heads=8)).to(device)
+BaseFusionLayer = nn.DataParallel(MultiScaleBaseFusion(dim=64, mid_dim=96, deep_dim=128)).to(device)
 DetailFuseLayer = nn.DataParallel(DetailFeatureExtraction(num_layers=1)).to(device)
 
 # optimizer, scheduler and loss function
@@ -79,7 +80,7 @@ optimizer1 = torch.optim.Adam(
 optimizer2 = torch.optim.Adam(
     DIDF_Decoder.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer3 = torch.optim.Adam(
-    BaseFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
+    BaseFusionLayer.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer4 = torch.optim.Adam(
     DetailFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
 
@@ -114,7 +115,7 @@ def build_checkpoint(epoch):
         'BaseUNetEncoder': BaseUNet_Encoder.state_dict(),
         'BaseUNetDecoder': BaseUNet_Decoder.state_dict(),
         'DIDF_Decoder': DIDF_Decoder.state_dict(),
-        'BaseFuseLayer': BaseFuseLayer.state_dict(),
+        'BaseFusionLayer': BaseFusionLayer.state_dict(),
         'DetailFuseLayer': DetailFuseLayer.state_dict(),
         'optimizer1': optimizer1.state_dict(),
         'optimizer2': optimizer2.state_dict(),
@@ -143,10 +144,12 @@ if args.resume:
     DIDF_Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
     if 'BaseUNetEncoder' not in checkpoint or 'BaseUNetDecoder' not in checkpoint:
         raise KeyError("Checkpoint is missing BaseUNetEncoder/BaseUNetDecoder state dicts for the new Base U-Net architecture.")
+    if 'BaseFusionLayer' not in checkpoint:
+        raise KeyError("Checkpoint is missing BaseFusionLayer state dict. Old BaseFuseLayer checkpoints are not compatible with MultiScaleBaseFusion.")
     BaseUNet_Encoder.load_state_dict(checkpoint['BaseUNetEncoder'])
     BaseUNet_Decoder.load_state_dict(checkpoint['BaseUNetDecoder'])
     DIDF_Decoder.load_state_dict(checkpoint['DIDF_Decoder'])
-    BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
+    BaseFusionLayer.load_state_dict(checkpoint['BaseFusionLayer'])
     DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
     if 'optimizer1' in checkpoint:
         optimizer1.load_state_dict(checkpoint['optimizer1'])
@@ -166,7 +169,14 @@ def extract_base_detail_features(input_tensor):
     detail_feature, shared_feature = DIDF_Encoder(input_tensor)
     base_shallow, base_mid, base_deep = BaseUNet_Encoder(shared_feature)
     base_feature = BaseUNet_Decoder(base_shallow, base_mid, base_deep)
-    return base_feature, detail_feature, shared_feature, (base_shallow, base_mid, base_deep)
+    return {
+        "base_feature": base_feature,
+        "base_shallow": base_shallow,
+        "base_mid": base_mid,
+        "base_deep": base_deep,
+        "detail_feature": detail_feature,
+        "shared_feature": shared_feature,
+    }
 
 
 def calc_base_cc_loss(visible_base_features, infrared_base_features):
@@ -199,14 +209,14 @@ for epoch in range(start_epoch, num_epochs):
         DIDF_Decoder.train()
         BaseUNet_Encoder.train()
         BaseUNet_Decoder.train()
-        BaseFuseLayer.train()
+        BaseFusionLayer.train()
         DetailFuseLayer.train()
 
         DIDF_Encoder.zero_grad()
         DIDF_Decoder.zero_grad()
         BaseUNet_Encoder.zero_grad()
         BaseUNet_Decoder.zero_grad()
-        BaseFuseLayer.zero_grad()
+        BaseFusionLayer.zero_grad()
         DetailFuseLayer.zero_grad()
 
         optimizer1.zero_grad()
@@ -215,13 +225,16 @@ for epoch in range(start_epoch, num_epochs):
         optimizer4.zero_grad()
 
         if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _, feature_V_B_levels = extract_base_detail_features(data_VIS)
-            feature_I_B, feature_I_D, _, feature_I_B_levels = extract_base_detail_features(data_IR)
-            data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_B, feature_V_D)
-            data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_B, feature_I_D)
+            feat_V = extract_base_detail_features(data_VIS)
+            feat_I = extract_base_detail_features(data_IR)
+            data_VIS_hat, _ = DIDF_Decoder(data_VIS, feat_V["base_feature"], feat_V["detail_feature"])
+            data_IR_hat, _ = DIDF_Decoder(data_IR, feat_I["base_feature"], feat_I["detail_feature"])
 
-            cc_loss_B = calc_base_cc_loss(feature_V_B_levels, feature_I_B_levels)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
+            cc_loss_B = calc_base_cc_loss(
+                (feat_V["base_shallow"], feat_V["base_mid"], feat_V["base_deep"]),
+                (feat_I["base_shallow"], feat_I["base_mid"], feat_I["base_deep"]),
+            )
+            cc_loss_D = cc(feat_V["detail_feature"], feat_I["detail_feature"])
             mse_loss_V = 5 * Loss_ssim(data_VIS, data_VIS_hat) + MSELoss(data_VIS, data_VIS_hat)
             mse_loss_I = 5 * Loss_ssim(data_IR, data_IR_hat) + MSELoss(data_IR, data_IR_hat)
 
@@ -245,18 +258,29 @@ for epoch in range(start_epoch, num_epochs):
             optimizer1.step()  
             optimizer2.step()
         else:  #Phase II
-            feature_V_B, feature_V_D, feature_V, feature_V_B_levels = extract_base_detail_features(data_VIS)
-            feature_I_B, feature_I_D, feature_I, feature_I_B_levels = extract_base_detail_features(data_IR)
-            feature_F_B = BaseFuseLayer(feature_I_B+feature_V_B)
-            feature_F_D = DetailFuseLayer(feature_I_D+feature_V_D)
+            feat_V = extract_base_detail_features(data_VIS)
+            feat_I = extract_base_detail_features(data_IR)
+            F_B_s, F_B_m, F_B_d = BaseFusionLayer(
+                feat_I["base_shallow"],
+                feat_I["base_mid"],
+                feat_I["base_deep"],
+                feat_V["base_shallow"],
+                feat_V["base_mid"],
+                feat_V["base_deep"],
+            )
+            feature_F_B = BaseUNet_Decoder(F_B_s, F_B_m, F_B_d)
+            feature_F_D = DetailFuseLayer(feat_I["detail_feature"] + feat_V["detail_feature"])
             data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
 
             
             mse_loss_V = 5*Loss_ssim(data_VIS, data_Fuse) + MSELoss(data_VIS, data_Fuse)
             mse_loss_I = 5*Loss_ssim(data_IR,  data_Fuse) + MSELoss(data_IR,  data_Fuse)
 
-            cc_loss_B = calc_base_cc_loss(feature_V_B_levels, feature_I_B_levels)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
+            cc_loss_B = calc_base_cc_loss(
+                (feat_V["base_shallow"], feat_V["base_mid"], feat_V["base_deep"]),
+                (feat_I["base_shallow"], feat_I["base_mid"], feat_I["base_deep"]),
+            )
+            cc_loss_D = cc(feat_V["detail_feature"], feat_I["detail_feature"])
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
             fusionloss, _, _, _  = criteria_fusion(data_VIS, data_IR, data_Fuse)
             
@@ -271,7 +295,7 @@ for epoch in range(start_epoch, num_epochs):
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
-                BaseFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+                BaseFusionLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DetailFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             optimizer1.step()  
