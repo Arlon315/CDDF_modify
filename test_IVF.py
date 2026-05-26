@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.CRITICAL)
 
 FEATURE_VIS_CHANNELS = 8
 FEATURE_GRID_COLS = 4
-DEFAULT_CKPT_PATH = r"models/Res_CGA_DEConv/CDDFuse_restormer_cga_deconv2_05-19-20-20_epoch_050.pth"
+DEFAULT_CKPT_PATH = r"models/Unet/CDDFuse_05-26-11-42_epoch_040.pth"
 DEFAULT_DATASETS = ["TNO", "RoadScene"]
 
 

@@ -171,7 +171,7 @@ def get_project_defaults() -> Mapping[str, object]:
             },
         },
         "default_dataset": "RoadScence",
-        "default_model_path": "models/CDDFuse_05-13-16-32_epoch_120.pth",
+        "default_model_path": "models/Unet/CDDFuse_05-26-11-42_epoch_060.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,
