@@ -8,6 +8,7 @@ Import packages
 
 from net import (
     build_cddfuse_modules,
+    fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
@@ -63,9 +64,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--base_fusion",
-    choices=("base", "baseSAFM"),
-    default="baseSAFM",
-    help="Use base fusion or baseSAFM fusion.",
+    choices=("base", "baseSAFM", "windowMCAM"),
+    default="windowMCAM",
+    help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
 )
 
 args = parser.parse_args()
@@ -362,7 +363,7 @@ for epoch in range(start_epoch, num_epochs):
         else:  #Phase II
             feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
             feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
-            feature_F_B = BaseFuseLayer(feature_I_B+feature_V_B)
+            feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
             feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
             data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
 

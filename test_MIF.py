@@ -1,5 +1,6 @@
 from net import (
     build_cddfuse_modules,
+    fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
@@ -62,7 +63,7 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
 
                 feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
                 feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
-                feature_F_B = BaseFuseLayer(feature_V_B + feature_I_B)
+                feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
                 feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
                 if ckpt_path==CDDFuse_path:
                     data_Fuse, _ = Decoder(data_IR+data_VIS, feature_F_B, feature_F_D)

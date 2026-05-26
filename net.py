@@ -258,6 +258,168 @@ class BaseFuseWithSAFM(nn.Module):
         return x
 
 
+def window_partition(x, window_size):
+    B, C, H, W = x.shape
+    x = x.view(B, C, H // window_size, window_size, W // window_size, window_size)
+    x = x.permute(0, 2, 4, 3, 5, 1).contiguous()
+    windows = x.view(-1, window_size * window_size, C)
+    return windows
+
+
+def window_reverse(windows, window_size, H, W, B):
+    C = windows.shape[-1]
+    x = windows.view(B, H // window_size, W // window_size, window_size, window_size, C)
+    x = x.permute(0, 5, 1, 3, 2, 4).contiguous()
+    x = x.view(B, C, H, W)
+    return x
+
+
+def calculate_mask(H, W, window_size, shift_size, device):
+    img_mask = torch.zeros((1, 1, H, W), device=device)
+    h_slices = (
+        slice(0, -window_size),
+        slice(-window_size, -shift_size),
+        slice(-shift_size, None),
+    )
+    w_slices = (
+        slice(0, -window_size),
+        slice(-window_size, -shift_size),
+        slice(-shift_size, None),
+    )
+
+    cnt = 0
+    for h in h_slices:
+        for w in w_slices:
+            img_mask[:, :, h, w] = cnt
+            cnt += 1
+
+    mask_windows = window_partition(img_mask, window_size)
+    mask_windows = mask_windows.squeeze(-1)
+    attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+    attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0))
+    attn_mask = attn_mask.masked_fill(attn_mask == 0, float(0.0))
+    return attn_mask
+
+
+class WindowMCAMBlock(nn.Module):
+    def __init__(self, dim=64, inter_channels=16, window_size=8, shift_size=0):
+        super(WindowMCAMBlock, self).__init__()
+        self.dim = dim
+        self.inter_channels = inter_channels
+        self.window_size = window_size
+        self.shift_size = shift_size
+
+        self.g_ir = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.g_vi = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.theta_ir = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.theta_vi = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.phi_ir = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.phi_vi = nn.Conv2d(dim, inter_channels, 1, bias=False)
+        self.proj = nn.Conv2d(inter_channels, dim, 1, bias=True)
+
+        nn.init.constant_(self.proj.weight, 0)
+        nn.init.constant_(self.proj.bias, 0)
+
+    def _pad_to_window(self, x):
+        B, C, H, W = x.shape
+        ws = self.window_size
+        pad_h = (ws - H % ws) % ws
+        pad_w = (ws - W % ws) % ws
+
+        if pad_h > 0 or pad_w > 0:
+            x = F.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
+
+        return x, H, W
+
+    def forward(self, ir, vi):
+        B, C, H0, W0 = ir.shape
+        del H0, W0
+
+        ir, H_ori, W_ori = self._pad_to_window(ir)
+        vi, _, _ = self._pad_to_window(vi)
+
+        B, C, H, W = ir.shape
+        ws = self.window_size
+        ss = self.shift_size
+
+        if ss > 0:
+            ir = torch.roll(ir, shifts=(-ss, -ss), dims=(2, 3))
+            vi = torch.roll(vi, shifts=(-ss, -ss), dims=(2, 3))
+            attn_mask = calculate_mask(H, W, ws, ss, ir.device)
+        else:
+            attn_mask = None
+
+        g_ir = window_partition(self.g_ir(ir), ws)
+        g_vi = window_partition(self.g_vi(vi), ws)
+        theta_ir = window_partition(self.theta_ir(ir), ws)
+        theta_vi = window_partition(self.theta_vi(vi), ws)
+        phi_ir = window_partition(self.phi_ir(ir), ws)
+        phi_vi = window_partition(self.phi_vi(vi), ws)
+
+        attn_ir = torch.matmul(theta_ir, phi_ir.transpose(-2, -1))
+        attn_vi = torch.matmul(theta_vi, phi_vi.transpose(-2, -1))
+
+        if attn_mask is not None:
+            nW = attn_mask.shape[0]
+            attn_ir = attn_ir.view(B, nW, ws * ws, ws * ws)
+            attn_vi = attn_vi.view(B, nW, ws * ws, ws * ws)
+            attn_ir = attn_ir + attn_mask.unsqueeze(0)
+            attn_vi = attn_vi + attn_mask.unsqueeze(0)
+            attn_ir = attn_ir.view(-1, ws * ws, ws * ws)
+            attn_vi = attn_vi.view(-1, ws * ws, ws * ws)
+
+        attn_ir = F.softmax(attn_ir, dim=-1)
+        attn_vi = F.softmax(attn_vi, dim=-1)
+        common_attn = attn_ir * attn_vi
+        common_attn = common_attn / (common_attn.sum(dim=-1, keepdim=True) + 1e-6)
+
+        y_ir = torch.matmul(common_attn, g_ir)
+        y_vi = torch.matmul(common_attn, g_vi)
+        y = y_ir * y_vi
+        y = window_reverse(y, ws, H, W, B)
+
+        if ss > 0:
+            y = torch.roll(y, shifts=(ss, ss), dims=(2, 3))
+
+        y = y[:, :, :H_ori, :W_ori].contiguous()
+        y = self.proj(y)
+        return y
+
+
+class SwinWindowMCAMBaseFusion(nn.Module):
+    dual_input = True
+
+    def __init__(self, dim=64, inter_channels=16, window_size=8):
+        super(SwinWindowMCAMBaseFusion, self).__init__()
+        self.window_mcam = WindowMCAMBlock(
+            dim=dim,
+            inter_channels=inter_channels,
+            window_size=window_size,
+            shift_size=0,
+        )
+        self.shift_window_mcam = WindowMCAMBlock(
+            dim=dim,
+            inter_channels=inter_channels,
+            window_size=window_size,
+            shift_size=window_size // 2,
+        )
+        self.refine = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1, groups=dim, bias=True),
+            nn.GELU(),
+            nn.Conv2d(dim, dim, 1, 1, 0, bias=True),
+        )
+        self.alpha = nn.Parameter(torch.zeros(1))
+
+    def forward(self, ir_base, vi_base):
+        shortcut = ir_base + vi_base
+        common_1 = self.window_mcam(ir_base, vi_base)
+        common_2 = self.shift_window_mcam(ir_base, vi_base)
+        common = common_1 + common_2
+        common = self.refine(common)
+        out = shortcut + torch.tanh(self.alpha) * common
+        return out
+
+
 class InvertedResidualBlock(nn.Module):
     def __init__(self, inp, oup, expand_ratio):
         super(InvertedResidualBlock, self).__init__()
@@ -491,6 +653,13 @@ class CGAFusion(nn.Module):
 
 def _unwrap_module(module):
     return module.module if isinstance(module, nn.DataParallel) else module
+
+
+def fuse_base_features(base_fuse_layer, feature_i_b, feature_v_b):
+    module = _unwrap_module(base_fuse_layer)
+    if getattr(module, 'dual_input', False):
+        return base_fuse_layer(feature_i_b, feature_v_b)
+    return base_fuse_layer(feature_i_b + feature_v_b)
 
 
 def fuse_detail_features(detail_fuse_layer, feature_i_d, feature_v_d):
@@ -777,11 +946,15 @@ def _normalize_base_fusion(base_fusion):
         return 'base'
     if base_fusion.lower() in ('basesafm', 'base_safm', 'safm'):
         return 'baseSAFM'
+    if base_fusion.lower() in ('windowmcam', 'window_mcam', 'swinwindowmcam', 'swin_window_mcam', 'mcam'):
+        return 'windowMCAM'
     raise ValueError(f"Unsupported base_fusion: {base_fusion}")
 
 
 def _build_base_fusion_module(base_fusion, backbone):
     base_fusion = _normalize_base_fusion(base_fusion)
+    if base_fusion == 'windowMCAM':
+        return SwinWindowMCAMBaseFusion(dim=64, inter_channels=16, window_size=8)
     if base_fusion == 'baseSAFM':
         return BaseFuseWithSAFM(dim=64, num_heads=8)
     if str(backbone).lower() == 'fast':
@@ -870,6 +1043,8 @@ def infer_cddfuse_base_fusion(checkpoint):
 
     base_state = checkpoint.get('BaseFuseLayer', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(base_state)
+    if any(str(key).startswith(('window_mcam.', 'shift_window_mcam.', 'refine.')) or str(key) == 'alpha' for key in keys):
+        return 'windowMCAM'
     if any(str(key).startswith(('base.', 'safm.', 'proj.')) for key in keys):
         return 'baseSAFM'
 

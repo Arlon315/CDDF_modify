@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from net import (  # noqa: E402
     build_cddfuse_modules,
+    fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
@@ -280,7 +281,7 @@ def run_fusion_prediction(
     with torch.no_grad():
         feature_v_b, feature_v_d, _ = bundle["encoder"](vis_tensor)
         feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
-        feature_f_b = bundle["base_fuse"](feature_v_b + feature_i_b)
+        feature_f_b = fuse_base_features(bundle["base_fuse"], feature_i_b, feature_v_b)
         feature_f_d = fuse_detail_features(bundle["detail_fuse"], feature_i_d, feature_v_d)
         fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
         fused_tensor = _normalize_fused_tensor(fused_tensor)

@@ -1,6 +1,7 @@
 from net import (
     build_cddfuse_modules,
     DetailFeatureExtraction,
+    fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
@@ -158,7 +159,7 @@ def main():
 
                 feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
                 feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
-                feature_F_B = BaseFuseLayer(feature_V_B + feature_I_B)
+                feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
                 feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
                 data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_B, feature_F_D)
                 # data_Fuse, _ = Decoder(None, feature_F_B, feature_F_D)

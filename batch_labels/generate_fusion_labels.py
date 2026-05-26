@@ -342,7 +342,9 @@ class CDDFuseAdapter(BaseFusionAdapter):
         try:
             from net import (  # pylint: disable=import-outside-toplevel
                 build_cddfuse_modules,
+                fuse_base_features,
                 fuse_detail_features,
+                infer_cddfuse_base_fusion,
                 infer_cddfuse_backbone,
                 infer_cddfuse_detail_fusion,
                 infer_cddfuse_detail_num_layers,
@@ -358,7 +360,9 @@ class CDDFuseAdapter(BaseFusionAdapter):
         self.encoder, self.decoder, self.base_fuse, self.detail_fuse = build_cddfuse_modules(
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint))
+            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
+            base_fusion=infer_cddfuse_base_fusion(checkpoint))
+        self.fuse_base_features = fuse_base_features
         self.fuse_detail_features = fuse_detail_features
         self.encoder = self.encoder.to(self.device)
         self.decoder = self.decoder.to(self.device)
@@ -438,7 +442,7 @@ class CDDFuseAdapter(BaseFusionAdapter):
             with amp_context:
                 feature_v_b, feature_v_d, _ = self.encoder(vis_tensor)
                 feature_i_b, feature_i_d, _ = self.encoder(ir_tensor)
-                feature_f_b = self.base_fuse(feature_v_b + feature_i_b)
+                feature_f_b = self.fuse_base_features(self.base_fuse, feature_i_b, feature_v_b)
                 feature_f_d = self.fuse_detail_features(self.detail_fuse, feature_i_d, feature_v_d)
                 fused_tensor, _ = self.decoder(decoder_input, feature_f_b, feature_f_d)
                 fused_tensor = self._normalize_output(fused_tensor)
