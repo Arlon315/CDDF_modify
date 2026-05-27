@@ -13,8 +13,10 @@ from net import (
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
     infer_cddfuse_detail_fusion,
+    infer_cddfuse_encoder_base_feature,
+    infer_cddfuse_encoder_detail_num_layers,
+    infer_cddfuse_encoder_random_mamba_layers,
 )
-from utils.dataset import H5Dataset
 import argparse
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  
@@ -24,8 +26,6 @@ import datetime
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from utils.loss import Fusionloss, cc
-import kornia
 
 
 
@@ -37,7 +37,6 @@ Configure our network
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
-criteria_fusion = Fusionloss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
@@ -68,10 +67,45 @@ parser.add_argument(
     default="windowMCAM",
     help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
 )
+parser.add_argument(
+    "--encoder_base_feature",
+    choices=("random_mamba", "base"),
+    default="random_mamba",
+    help="Use RandomMamba or the legacy BaseFeatureExtraction in Restormer_Encoder.",
+)
+parser.add_argument(
+    "--encoder_random_mamba_layers",
+    type=int,
+    default=4,
+    help="Number of RandomMamba layers used by Restormer_Encoder when --encoder_base_feature=random_mamba.",
+)
+parser.add_argument(
+    "--encoder_detail_num_layers",
+    type=int,
+    default=1,
+    help="Number of DetailFeatureExtraction layers inside Restormer_Encoder.",
+)
 
 args = parser.parse_args()
+
+
+def cli_flag_provided(flag):
+    return any(item == flag or item.startswith(flag + '=') for item in sys.argv[1:])
+
+
+if args.resume:
+    resume_config_path = os.path.expanduser(args.resume)
+    resume_config_checkpoint = torch.load(resume_config_path, map_location='cpu')
+    if not cli_flag_provided('--encoder_base_feature'):
+        args.encoder_base_feature = infer_cddfuse_encoder_base_feature(resume_config_checkpoint)
+    if not cli_flag_provided('--encoder_random_mamba_layers'):
+        args.encoder_random_mamba_layers = infer_cddfuse_encoder_random_mamba_layers(resume_config_checkpoint)
+    if not cli_flag_provided('--encoder_detail_num_layers'):
+        args.encoder_detail_num_layers = infer_cddfuse_encoder_detail_num_layers(resume_config_checkpoint)
+
 base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
-model_str = f"{args.backbone}_{args.detail_fusion}{base_fusion_suffix}"
+encoder_base_suffix = "" if args.encoder_base_feature == "base" else f"_{args.encoder_base_feature}{args.encoder_random_mamba_layers}"
+model_str = f"{args.backbone}{encoder_base_suffix}_{args.detail_fusion}{base_fusion_suffix}"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -98,6 +132,9 @@ encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cdd
     args.backbone,
     detail_fusion=args.detail_fusion,
     base_fusion=args.base_fusion,
+    encoder_detail_num_layers=args.encoder_detail_num_layers,
+    encoder_base_feature=args.encoder_base_feature,
+    encoder_random_mamba_layers=args.encoder_random_mamba_layers,
 )
 DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
@@ -119,6 +156,11 @@ scheduler2 = torch.optim.lr_scheduler.StepLR(optimizer2, step_size=optim_step, g
 scheduler3 = torch.optim.lr_scheduler.StepLR(optimizer3, step_size=optim_step, gamma=optim_gamma)
 scheduler4 = torch.optim.lr_scheduler.StepLR(optimizer4, step_size=optim_step, gamma=optim_gamma)
 
+from utils.dataset import H5Dataset
+from utils.loss import Fusionloss, cc
+import kornia
+
+criteria_fusion = Fusionloss()
 MSELoss = nn.MSELoss()  
 L1Loss = nn.L1Loss()
 Loss_ssim = kornia.losses.SSIMLoss(11, reduction='mean')
@@ -150,6 +192,9 @@ def build_checkpoint(epoch):
         'backbone': args.backbone,
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
+        'encoder_base_feature': args.encoder_base_feature,
+        'encoder_random_mamba_layers': args.encoder_random_mamba_layers,
+        'encoder_detail_num_layers': args.encoder_detail_num_layers,
         'encoder_detail_enhance': 'deconv',
         'encoder_detail_enhance_layers': 2,
         'decoder_freq_enhance': 'dynamic_filter',
@@ -234,13 +279,20 @@ if args.resume:
         )
     checkpoint_detail_fusion = infer_cddfuse_detail_fusion(checkpoint)
     checkpoint_base_fusion = infer_cddfuse_base_fusion(checkpoint)
+    checkpoint_encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
     detail_fusion_matches = checkpoint_detail_fusion == args.detail_fusion
     base_fusion_matches = checkpoint_base_fusion == args.base_fusion
+    encoder_base_matches = checkpoint_encoder_base_feature == args.encoder_base_feature
     resume_mode = args.resume_mode
     if resume_mode == "auto":
-        resume_mode = "full" if detail_fusion_matches and base_fusion_matches else "pretrain"
+        resume_mode = "full" if detail_fusion_matches and base_fusion_matches and encoder_base_matches else "pretrain"
 
     if resume_mode == "full":
+        if not encoder_base_matches:
+            raise ValueError(
+                f"Checkpoint encoder_base_feature is '{checkpoint_encoder_base_feature}', "
+                f"but current --encoder_base_feature is '{args.encoder_base_feature}'."
+            )
         if not detail_fusion_matches:
             raise ValueError(
                 f"Checkpoint detail_fusion is '{checkpoint_detail_fusion}', "
@@ -271,6 +323,13 @@ if args.resume:
         print(f"Resumed full checkpoint from {resume_path} at epoch {start_epoch}.")
     else:
         skipped_resume_parts = []
+        if not encoder_base_matches:
+            skipped_resume_parts.append('DIDF_Encoder baseFeature/optimizer1/scheduler1')
+            print(
+                f"Loaded DIDF_Encoder with strict=False: checkpoint encoder_base_feature="
+                f"'{checkpoint_encoder_base_feature}', current encoder_base_feature="
+                f"'{args.encoder_base_feature}'."
+            )
         if base_fusion_matches:
             load_state_if_present(BaseFuseLayer, checkpoint, 'BaseFuseLayer', required=False)
             skipped_resume_parts.append('optimizer3/scheduler3')
@@ -288,9 +347,10 @@ if args.resume:
                 f"Skipped DetailFuseLayer: checkpoint detail_fusion='{checkpoint_detail_fusion}', "
                 f"current detail_fusion='{args.detail_fusion}'."
             )
-        load_optimizer_if_present(optimizer1, checkpoint, 'optimizer1')
+        if encoder_base_matches:
+            load_optimizer_if_present(optimizer1, checkpoint, 'optimizer1')
+            load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
-        load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
         if detail_fusion_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
@@ -299,6 +359,8 @@ if args.resume:
         skipped_message = ', '.join(skipped_resume_parts)
         print(
             f"Loaded Phase I pretrain from {resume_path}: "
+            f"checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
+            f"current encoder_base_feature='{args.encoder_base_feature}'; "
             f"checkpoint detail_fusion='{checkpoint_detail_fusion}', current detail_fusion='{args.detail_fusion}'; "
             f"checkpoint base_fusion='{checkpoint_base_fusion}', current base_fusion='{args.base_fusion}'. "
             f"Skipped {skipped_message}; starting at epoch {start_epoch}."

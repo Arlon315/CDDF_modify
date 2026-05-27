@@ -2,8 +2,10 @@
 __pycache__/
 *.py[codz]
 *$py.class
+# 测试图片文件夹
+test_result/
 
-# C extensions
+## C extensions
 *.so
 
 # Distribution / packaging
@@ -233,5 +235,3 @@ test_img/
 # Local editor folders
 .idea/
 .vscode/
-
-/test_result/

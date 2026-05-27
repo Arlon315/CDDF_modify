@@ -7,6 +7,10 @@ from net import (
     infer_cddfuse_backbone,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
+    infer_cddfuse_encoder_detail_enhance_layers,
+    infer_cddfuse_encoder_detail_num_layers,
+    infer_cddfuse_encoder_base_feature,
+    infer_cddfuse_encoder_random_mamba_layers,
 )
 import argparse
 import os
@@ -22,7 +26,7 @@ logging.basicConfig(level=logging.CRITICAL)
 
 FEATURE_VIS_CHANNELS = 8
 FEATURE_GRID_COLS = 4
-DEFAULT_CKPT_PATH = r"models/Res_CGA_DEConv/CDDFuse_restormer_cga_deconv2_05-19-20-20_epoch_050.pth"
+DEFAULT_CKPT_PATH = r"models/MCAM/restormer_cga_windowMCAM_05-26-20-06_epoch_080.pth"
 DEFAULT_DATASETS = ["TNO", "RoadScene"]
 
 
@@ -131,7 +135,11 @@ def main():
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
+            encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
+            encoder_detail_num_layers=infer_cddfuse_encoder_detail_num_layers(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
+            encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
+            encoder_random_mamba_layers=infer_cddfuse_encoder_random_mamba_layers(checkpoint),
         )
         encoder_module.detailFeature = DetailFeatureExtraction(num_layers=infer_encoder_detail_num_layers(checkpoint))
         Encoder = nn.DataParallel(encoder_module).to(device)

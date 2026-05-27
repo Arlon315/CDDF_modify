@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+from RandomMamba import BaseRandomMambaExtraction
 
 
 def rearrange(x, pattern, **kwargs):
@@ -844,6 +845,15 @@ def make_feature_blocks(block_type, dim, num_blocks, num_heads, ffn_expansion_fa
     raise ValueError(f"Unsupported block_type: {block_type}")
 
 
+def _normalize_encoder_base_feature(encoder_base_feature):
+    encoder_base_feature = str(encoder_base_feature or 'random_mamba').lower()
+    if encoder_base_feature in ('random_mamba', 'randommamba', 'shuffle_mamba', 'shufflemamba', 'mamba'):
+        return 'random_mamba'
+    if encoder_base_feature in ('base', 'base_feature', 'basefeature', 'restormer_base'):
+        return 'base'
+    raise ValueError(f"Unsupported encoder_base_feature: {encoder_base_feature}")
+
+
 class Restormer_Encoder(nn.Module):
     def __init__(self,
                  inp_channels=1,
@@ -856,6 +866,9 @@ class Restormer_Encoder(nn.Module):
                  LayerNorm_type='WithBias',
                  block_type='restormer',
                  detail_enhance_layers=2,
+                 encoder_detail_num_layers=1,
+                 encoder_base_feature='random_mamba',
+                 random_mamba_layers=4,
                  ):
 
         super(Restormer_Encoder, self).__init__()
@@ -864,12 +877,21 @@ class Restormer_Encoder(nn.Module):
 
         self.encoder_level1 = nn.Sequential(*make_feature_blocks(
             block_type, dim, num_blocks[0], heads[0], ffn_expansion_factor, bias, LayerNorm_type))
+        encoder_detail_num_layers = int(encoder_detail_num_layers or 1)
         if str(block_type).lower() == 'naf':
             self.baseFeature = NAFBlock(dim=dim)
-            self.detailFeature = DetailFeatureExtraction(num_layers=1)
+            self.detailFeature = DetailFeatureExtraction(num_layers=encoder_detail_num_layers)
         else:
-            self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads = heads[2])
-            self.detailFeature = DetailFeatureExtraction(num_layers=1)
+            encoder_base_feature = _normalize_encoder_base_feature(encoder_base_feature)
+            if encoder_base_feature == 'random_mamba':
+                self.baseFeature = BaseRandomMambaExtraction(
+                    dim=dim,
+                    num_layers=int(random_mamba_layers or 4),
+                    repeat=1,
+                )
+            else:
+                self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads = heads[2])
+            self.detailFeature = DetailFeatureExtraction(num_layers=encoder_detail_num_layers)
         detail_enhance_layers = int(detail_enhance_layers or 0)
         if detail_enhance_layers > 0:
             self.detailEnhance = nn.Sequential(*[DEConv(dim) for _ in range(detail_enhance_layers)])
@@ -967,19 +989,32 @@ def build_cddfuse_modules(
     detail_fusion='cga',
     detail_fusion_num_layers=1,
     encoder_detail_enhance_layers=2,
+    encoder_detail_num_layers=1,
     base_fusion='base',
+    encoder_base_feature='random_mamba',
+    encoder_random_mamba_layers=4,
 ):
     backbone = str(backbone or 'restormer').lower()
     if backbone == 'fast':
         return (
-            FastRestormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
+            FastRestormer_Encoder(
+                detail_enhance_layers=encoder_detail_enhance_layers,
+                encoder_detail_num_layers=encoder_detail_num_layers,
+                encoder_base_feature=encoder_base_feature,
+                random_mamba_layers=encoder_random_mamba_layers,
+            ),
             FastRestormer_Decoder(),
             _build_base_fusion_module(base_fusion, backbone),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
         )
     if backbone == 'restormer':
         return (
-            Restormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
+            Restormer_Encoder(
+                detail_enhance_layers=encoder_detail_enhance_layers,
+                encoder_detail_num_layers=encoder_detail_num_layers,
+                encoder_base_feature=encoder_base_feature,
+                random_mamba_layers=encoder_random_mamba_layers,
+            ),
             Restormer_Decoder(),
             _build_base_fusion_module(base_fusion, backbone),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
@@ -1049,6 +1084,48 @@ def infer_cddfuse_base_fusion(checkpoint):
         return 'baseSAFM'
 
     return 'base'
+
+
+def infer_cddfuse_encoder_base_feature(checkpoint):
+    encoder_base_feature = checkpoint.get('encoder_base_feature') if isinstance(checkpoint, dict) else None
+    if encoder_base_feature:
+        return _normalize_encoder_base_feature(encoder_base_feature)
+
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    keys = _strip_module_prefixes(encoder_state)
+    if any(str(key).startswith(('baseFeature.layers.', 'baseFeature.norm_f.')) for key in keys):
+        return 'random_mamba'
+    if any(str(key).startswith(('baseFeature.attn.', 'baseFeature.mlp.', 'baseFeature.norm1.', 'baseFeature.norm2.')) for key in keys):
+        return 'base'
+    return 'base'
+
+
+def infer_cddfuse_encoder_random_mamba_layers(checkpoint):
+    num_layers = checkpoint.get('encoder_random_mamba_layers') if isinstance(checkpoint, dict) else None
+    if num_layers is not None:
+        return int(num_layers)
+
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    layer_indices = []
+    for key in _strip_module_prefixes(encoder_state):
+        parts = str(key).split('.')
+        if len(parts) > 2 and parts[0] == 'baseFeature' and parts[1] == 'layers' and parts[2].isdigit():
+            layer_indices.append(int(parts[2]))
+    return max(layer_indices) + 1 if layer_indices else 4
+
+
+def infer_cddfuse_encoder_detail_num_layers(checkpoint):
+    num_layers = checkpoint.get('encoder_detail_num_layers') if isinstance(checkpoint, dict) else None
+    if num_layers is not None:
+        return int(num_layers)
+
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    layer_indices = []
+    for key in _strip_module_prefixes(encoder_state):
+        parts = str(key).split('.')
+        if len(parts) > 2 and parts[0] == 'detailFeature' and parts[1] == 'net' and parts[2].isdigit():
+            layer_indices.append(int(parts[2]))
+    return max(layer_indices) + 1 if layer_indices else 1
 
 
 def infer_cddfuse_detail_num_layers(checkpoint):

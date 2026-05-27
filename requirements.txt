@@ -9,3 +9,8 @@ scipy==1.7.3
 tensorboardX==2.5.1
 timm==0.4.12
 torch==1.8.1+cu111
+
+# Optional runtime dependency for encoder_base_feature=random_mamba.
+# mamba-ssm requires a compatible Linux/NVIDIA/CUDA setup and PyTorch >= 1.12.
+# Uncomment after upgrading the ImageFusion conda environment accordingly.
+# mamba-ssm[causal-conv1d]
