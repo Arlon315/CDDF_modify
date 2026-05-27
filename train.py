@@ -40,14 +40,14 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
-parser.add_argument("--resume", type=str, default="models/Res_CGA_DEConv/CDDFuse_restormer_cga_deconv2_05-19-20-20_epoch_030.pth", help="Path to a checkpoint to resume from.")
+parser.add_argument("--resume", type=str, default="", help="Path to a checkpoint to resume from.")
 parser.add_argument(
     "--resume_mode",
     choices=("auto", "full", "pretrain"),
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/decoder_filter/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/MCAM_Mamba/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
