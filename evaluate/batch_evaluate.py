@@ -169,9 +169,25 @@ def get_project_defaults() -> Mapping[str, object]:
                 "vis_dir": "E:/workspace/python_work/dataSet/MSRS-main/test/vi",
                 "num_pairs": 361,
             },
+            # 服务器
+            # "RoadScence": {
+            #     "ir_dir": os.path.expanduser(r"~/autodl-tmp/dataSets/MixDataSet/test/RoadScene/ir"),
+            #     "vis_dir": os.path.expanduser(r"~/autodl-tmp/dataSets/MixDataSet/test/RoadScene/vi"),
+            #     "num_pairs": 44,
+            # },
+            # "M3FD_Fusion": {
+            #     "ir_dir": os.path.expanduser(r"~/autodl-tmp/dataSets/MixDataSet/test/M3FD/ir"),
+            #     "vis_dir": os.path.expanduser(r"~/autodl-tmp/dataSets/MixDataSet/test/M3FD/vi"),
+            #     "num_pairs": 60,
+            # },
+            # "MSRS-main": {
+            #     "ir_dir" : os.path.expanduser(r"~/autodl-tmp/dataSets/MSRS/test/ir"),
+            #     "vis_dir" : os.path.expanduser(r"~/autodl-tmp/dataSets/MSRS/test/vi"),
+            #     "num_pairs": 361,
+            # },
         },
-        "default_dataset": "MSRS-main",
-        "default_model_path": "models/decoder_filter/restormer_cga_decoder_filter_05-20-17-34_epoch_050.pth",
+        "default_dataset": "M3FD_Fusion",
+        "default_model_path": "models/MCAM/restormer_cga_windowMCAM_05-26-20-06_epoch_060.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,

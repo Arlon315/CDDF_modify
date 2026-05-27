@@ -71,7 +71,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
-model_str = f"{args.backbone}_{args.detail_fusion}{base_fusion_suffix}_decoder_filter"
+model_str = f"{args.backbone}_{args.detail_fusion}{base_fusion_suffix}"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -374,7 +374,7 @@ for epoch in range(start_epoch, num_epochs):
             cc_loss_B = cc(feature_V_B, feature_I_B)
             cc_loss_D = cc(feature_V_D, feature_I_D)
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
-            fusionloss, _,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
+            fusionloss, _,_ ,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
             
             loss = fusionloss + coeff_decomp * loss_decomp
             loss.backward()
