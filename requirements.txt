@@ -8,7 +8,10 @@ scikit_learn==1.1.3
 scipy==1.7.3
 tensorboardX==2.5.1
 timm==0.4.12
-torch==1.8.1+cu111
+# torch==1.8.1+cu111
+# 实际
+Python==3.10.18
+torch==2.5.1+cu121
 
 # Optional runtime dependency for encoder_base_feature=random_mamba.
 # mamba-ssm requires a compatible Linux/NVIDIA/CUDA setup and PyTorch >= 1.12.
