@@ -12,6 +12,7 @@ timm==0.4.12
 # 实际
 Python==3.10.18
 torch==2.5.1+cu121
+transformers==4.40.2
 
 # Optional runtime dependency for encoder_base_feature=random_mamba.
 # mamba-ssm requires a compatible Linux/NVIDIA/CUDA setup and PyTorch >= 1.12.

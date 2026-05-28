@@ -10,6 +10,8 @@ network definition, checkpoints, and test-data conventions.
 from __future__ import annotations
 
 import sys
+import importlib.util
+import platform
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
@@ -69,6 +71,42 @@ def _strip_module_prefix(state_dict: Mapping[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+def _torch_load_checkpoint(model_file: Path, map_location: str) -> Any:
+    try:
+        return torch.load(str(model_file), map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(str(model_file), map_location=map_location)
+
+
+def validate_fusion_runtime(model_path: str = "models/CDDFuse_IVF.pth", device: str = "cuda", **_: Any) -> None:
+    del device
+    model_file = _resolve_project_path(model_path).resolve()
+    if not model_file.exists():
+        raise FileNotFoundError(model_file)
+
+    checkpoint = _torch_load_checkpoint(model_file, map_location="cpu")
+    encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
+    if encoder_base_feature != "random_mamba":
+        return
+
+    if importlib.util.find_spec("mamba_ssm") is not None:
+        return
+
+    message = (
+        f"Checkpoint '{model_file.name}' requires encoder_base_feature='random_mamba', "
+        "but `mamba_ssm` is not importable in this Python environment. "
+        f"Python executable: {sys.executable}. "
+    )
+    if platform.system().lower() == "windows":
+        message += (
+            "This local host is Windows; use the Linux server/WSL2 CUDA environment "
+            "where `mamba-ssm[causal-conv1d]` is installed, or evaluate a non-Mamba checkpoint locally."
+        )
+    else:
+        message += "Install a compatible `mamba-ssm[causal-conv1d]` build in this conda environment."
+    raise RuntimeError(message)
+
+
 def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Module]:
     model_file = _resolve_project_path(model_path).resolve()
     cache_key = (str(model_file), device)
@@ -76,7 +114,7 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
     if cached is not None:
         return cached
 
-    checkpoint = torch.load(str(model_file), map_location=device)
+    checkpoint = _torch_load_checkpoint(model_file, map_location=device)
 
     encoder, decoder, base_fuse, detail_fuse = build_cddfuse_modules(
         infer_cddfuse_backbone(checkpoint),

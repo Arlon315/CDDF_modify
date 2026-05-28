@@ -186,8 +186,8 @@ def get_project_defaults() -> Mapping[str, object]:
             #     "num_pairs": 361,
             # },
         },
-        "default_dataset": "M3FD_Fusion",
-        "default_model_path": "models/MCAM/restormer_cga_windowMCAM_05-26-20-06_epoch_060.pth",
+        "default_dataset": "RoadScence",
+        "default_model_path": "models/MCAM_Mamba/restormer_random_mamba4_cga_windowMCAM_05-27-17-21_epoch_060.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,
@@ -444,6 +444,30 @@ def load_callable(spec: str) -> Callable[..., Any]:
     if not callable(runner):
         raise TypeError(f"Runner is not callable: {spec}")
     return runner
+
+
+def run_runner_preflight(runner: Callable[..., Any], args: argparse.Namespace) -> None:
+    module = sys.modules.get(getattr(runner, "__module__", ""))
+    validator = getattr(module, "validate_fusion_runtime", None) if module is not None else None
+    if not callable(validator):
+        return
+
+    request = {
+        "model_path": args.model_path,
+        "device": args.device,
+        "fusion_params": args.fusion_params,
+        "runner_kwargs": args.runner_kwargs,
+    }
+    signature = inspect.signature(validator)
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_kwargs:
+        validator(**request)
+        return
+
+    validator(**{key: value for key, value in request.items() if key in signature.parameters})
 
 
 def build_runner_call_kwargs(
@@ -801,6 +825,12 @@ def main() -> None:
     if not image_pairs:
         print("No matched infrared-visible pairs were found.")
         return
+
+    try:
+        run_runner_preflight(runner, args)
+    except Exception as exc:
+        print(f"Runtime preflight failed: {exc}")
+        raise SystemExit(1) from exc
 
     if args.save_fused or args.save_rgb:
         Path(args.fused_dir).mkdir(parents=True, exist_ok=True)
