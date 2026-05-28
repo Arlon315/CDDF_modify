@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+from CrossMamba import CMFMOnlyDetailFusion
 from RandomMamba import BaseRandomMambaExtraction
 
 
@@ -957,6 +958,8 @@ def _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers=1):
     detail_fusion = str(detail_fusion or 'cga').lower()
     if detail_fusion == 'cga':
         return CGAFusion(dim=64)
+    if detail_fusion == 'cmfm':
+        return CMFMOnlyDetailFusion(dim=64, d_state=16, step_size=2)
     if detail_fusion in ('inn', 'detail', 'detail_feature'):
         return DetailFeatureExtraction(num_layers=int(detail_fusion_num_layers or 1))
     raise ValueError(f"Unsupported detail_fusion: {detail_fusion}")
@@ -1056,6 +1059,8 @@ def infer_cddfuse_detail_fusion(checkpoint):
         for key in detail_state.keys()
     ]
 
+    if any(str(key).startswith(('ln_1.', 'ln_2.', 'cmfm.', 'eca.')) for key in keys):
+        return 'cmfm'
     if any(str(key).startswith(('sa.', 'ca.', 'pa.', 'conv.')) for key in keys):
         return 'cga'
     if any(str(key).startswith('net.') or 'theta_' in str(key) for key in keys):

@@ -57,9 +57,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--detail_fusion",
-    choices=("cga", "dff", "inn"),
-    default="cga",
-    help="Use CGAFusion, DFF-style fusion, or the original INN DetailFeatureExtraction fusion.",
+    choices=("cga", "cmfm", "inn"),
+    default="cmfm",
+    help="Use CGAFusion, CMFM-only Mamba fusion, or the original INN DetailFeatureExtraction fusion.",
 )
 parser.add_argument(
     "--base_fusion",
@@ -122,7 +122,7 @@ coeff_decomp = 2.      # alpha2 and alpha4
 coeff_tv = 5.
 
 clip_grad_norm_value = 0.01
-optim_step = 15
+optim_step = 20
 optim_gamma = 0.5
 
 
@@ -170,7 +170,7 @@ Loss_ssim = kornia.losses.SSIMLoss(11, reduction='mean')
 trainloader = DataLoader(H5Dataset(r"data/MSRS_train_imgsize_128_stride_200.h5"),
                          batch_size=batch_size,
                          shuffle=True,
-                         num_workers=0)
+                         num_workers=16)
 
 loader = {'train': trainloader, }
 timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M")
