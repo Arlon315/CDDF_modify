@@ -796,6 +796,142 @@ class Attention(nn.Module):
 
 
 ##########################################################################
+## Dynamic-range Histogram Self-Attention (DHSA)
+class AttentionHistogram(nn.Module):
+    def __init__(self, dim, num_heads=4, bias=False, ifBox=True):
+        super(AttentionHistogram, self).__init__()
+        self.factor = num_heads
+        self.ifBox = ifBox
+        self.num_heads = num_heads
+        self.temperature = nn.Parameter(torch.ones(num_heads, 1, 1))
+
+        self.qkv = nn.Conv2d(dim, dim * 5, kernel_size=1, bias=bias)
+        self.qkv_dwconv = nn.Conv2d(
+            dim * 5, dim * 5, kernel_size=3, stride=1, padding=1, groups=dim * 5, bias=bias)
+        self.project_out = nn.Conv2d(dim, dim, kernel_size=1, bias=bias)
+
+    def pad(self, x, factor):
+        hw = x.shape[-1]
+        t_pad = [0, 0] if hw % factor == 0 else [0, (hw // factor + 1) * factor - hw]
+        x = F.pad(x, t_pad, 'constant', 0)
+        return x, t_pad
+
+    def unpad(self, x, t_pad):
+        _, _, hw = x.shape
+        return x[:, :, t_pad[0]:hw - t_pad[1]]
+
+    def softmax_1(self, x, dim=-1):
+        logit = x.exp()
+        logit = logit / (logit.sum(dim, keepdim=True) + 1)
+        return logit
+
+    def reshape_attn(self, q, k, v, ifBox):
+        b, c = q.shape[:2]
+        q, t_pad = self.pad(q, self.factor)
+        k, _ = self.pad(k, self.factor)
+        v, _ = self.pad(v, self.factor)
+        hw = q.shape[-1] // self.factor
+        channels_per_head = c // self.num_heads
+
+        if ifBox:
+            q = q.view(b, self.num_heads, channels_per_head, self.factor, hw)
+            k = k.view(b, self.num_heads, channels_per_head, self.factor, hw)
+            v = v.view(b, self.num_heads, channels_per_head, self.factor, hw)
+        else:
+            q = q.view(b, self.num_heads, channels_per_head, hw, self.factor).permute(0, 1, 2, 4, 3)
+            k = k.view(b, self.num_heads, channels_per_head, hw, self.factor).permute(0, 1, 2, 4, 3)
+            v = v.view(b, self.num_heads, channels_per_head, hw, self.factor).permute(0, 1, 2, 4, 3)
+
+        q = q.reshape(b, self.num_heads, channels_per_head * self.factor, hw)
+        k = k.reshape(b, self.num_heads, channels_per_head * self.factor, hw)
+        v = v.reshape(b, self.num_heads, channels_per_head * self.factor, hw)
+        q = torch.nn.functional.normalize(q, dim=-1)
+        k = torch.nn.functional.normalize(k, dim=-1)
+        attn = (q @ k.transpose(-2, -1)) * self.temperature
+        attn = self.softmax_1(attn, dim=-1)
+        out = attn @ v
+
+        out = out.view(b, self.num_heads, channels_per_head, self.factor, hw)
+        if ifBox:
+            out = out.reshape(b, c, self.factor * hw)
+        else:
+            out = out.permute(0, 1, 2, 4, 3).reshape(b, c, hw * self.factor)
+        return self.unpad(out, t_pad)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x_sort, idx_h = x[:, :c // 2].sort(-2)
+        x_sort, idx_w = x_sort.sort(-1)
+        x = torch.cat((x_sort, x[:, c // 2:]), dim=1)
+        qkv = self.qkv_dwconv(self.qkv(x))
+        q1, k1, q2, k2, v = qkv.chunk(5, dim=1)
+
+        v, idx = v.view(b, c, -1).sort(dim=-1)
+        q1 = torch.gather(q1.view(b, c, -1), dim=2, index=idx)
+        k1 = torch.gather(k1.view(b, c, -1), dim=2, index=idx)
+        q2 = torch.gather(q2.view(b, c, -1), dim=2, index=idx)
+        k2 = torch.gather(k2.view(b, c, -1), dim=2, index=idx)
+
+        out1 = self.reshape_attn(q1, k1, v, True)
+        out2 = self.reshape_attn(q2, k2, v, False)
+
+        out1 = torch.zeros_like(out1).scatter(2, idx, out1).view(b, c, h, w)
+        out2 = torch.zeros_like(out2).scatter(2, idx, out2).view(b, c, h, w)
+        out = self.project_out(out1 * out2)
+        out_replace = out[:, :c // 2]
+        out_replace = torch.zeros_like(out_replace).scatter(-1, idx_w, out_replace)
+        out_replace = torch.zeros_like(out_replace).scatter(-2, idx_h, out_replace)
+        return torch.cat((out_replace, out[:, c // 2:]), dim=1)
+
+
+##########################################################################
+## Dual-scale Gated Feed-Forward Network (DGFF)
+class HTBFeedForward(nn.Module):
+    def __init__(self, dim, ffn_expansion_factor, bias):
+        super(HTBFeedForward, self).__init__()
+
+        hidden_features = int(dim * ffn_expansion_factor)
+
+        self.project_in = nn.Conv2d(dim, hidden_features * 2, kernel_size=1, bias=bias)
+        self.dwconv_5 = nn.Conv2d(
+            hidden_features // 4, hidden_features // 4, kernel_size=5, stride=1,
+            padding=2, groups=hidden_features // 4, bias=bias)
+        self.dwconv_dilated2_1 = nn.Conv2d(
+            hidden_features // 4, hidden_features // 4, kernel_size=3, stride=1,
+            padding=2, groups=hidden_features // 4, bias=bias, dilation=2)
+        self.p_unshuffle = nn.PixelUnshuffle(2)
+        self.p_shuffle = nn.PixelShuffle(2)
+        self.project_out = nn.Conv2d(hidden_features, dim, kernel_size=1, bias=bias)
+
+    def forward(self, x):
+        x = self.project_in(x)
+        x = self.p_shuffle(x)
+        x1, x2 = x.chunk(2, dim=1)
+        x1 = self.dwconv_5(x1)
+        x2 = self.dwconv_dilated2_1(x2)
+        x = F.mish(x2) * x1
+        x = self.p_unshuffle(x)
+        x = self.project_out(x)
+        return x
+
+
+##########################################################################
+## Histogram Transformer Block (HTB)
+class HTB(nn.Module):
+    def __init__(self, dim, num_heads=4, ffn_expansion_factor=2.5, bias=False, LayerNorm_type='WithBias'):
+        super(HTB, self).__init__()
+
+        self.norm_g = LayerNorm(dim, LayerNorm_type)
+        self.attn_g = AttentionHistogram(dim, num_heads, bias, True)
+        self.norm_ff1 = LayerNorm(dim, LayerNorm_type)
+        self.ffn = HTBFeedForward(dim, ffn_expansion_factor, bias)
+
+    def forward(self, x):
+        x = x + self.attn_g(self.norm_g(x))
+        return x + self.ffn(self.norm_ff1(x))
+
+
+##########################################################################
 class TransformerBlock(nn.Module):
     def __init__(self, dim, num_heads, ffn_expansion_factor, bias, LayerNorm_type):
         super(TransformerBlock, self).__init__()
@@ -831,6 +967,17 @@ def make_feature_blocks(block_type, dim, num_blocks, num_heads, ffn_expansion_fa
     if block_type == 'restormer':
         return [
             TransformerBlock(
+                dim=dim,
+                num_heads=num_heads,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=LayerNorm_type,
+            )
+            for _ in range(num_blocks)
+        ]
+    if block_type == 'htb':
+        return [
+            HTB(
                 dim=dim,
                 num_heads=num_heads,
                 ffn_expansion_factor=ffn_expansion_factor,
@@ -891,13 +1038,16 @@ class Restormer_Decoder(nn.Module):
                  dim=64,
                  num_blocks=[4, 4],
                  heads=[8, 8, 8],
-                 ffn_expansion_factor=2,
+                 ffn_expansion_factor=None,
                  bias=False,
                  LayerNorm_type='WithBias',
-                 block_type='restormer',
+                 block_type='htb',
                  ):
 
         super(Restormer_Decoder, self).__init__()
+        block_type = str(block_type).lower()
+        if ffn_expansion_factor is None:
+            ffn_expansion_factor = 2.5 if block_type == 'htb' else 2
         self.reduce_channel = nn.Conv2d(int(dim*2), int(dim), kernel_size=1, bias=bias)
         self.encoder_level2 = nn.Sequential(*make_feature_blocks(
             block_type, dim, num_blocks[1], heads[1], ffn_expansion_factor, bias, LayerNorm_type))
@@ -962,15 +1112,29 @@ def _build_base_fusion_module(base_fusion, backbone):
     return BaseFeatureExtraction(dim=64, num_heads=8)
 
 
+def resolve_cddfuse_decoder_block(decoder_block=None, backbone='restormer'):
+    backbone = str(backbone or 'restormer').lower()
+    decoder_block = str(decoder_block or 'auto').lower()
+    if decoder_block == 'auto':
+        return 'naf' if backbone == 'fast' else 'htb'
+    if decoder_block in ('restormer', 'htb', 'naf'):
+        return decoder_block
+    raise ValueError(f"Unsupported decoder_block: {decoder_block}")
+
+
 def build_cddfuse_modules(
     backbone='restormer',
     detail_fusion='cga',
     detail_fusion_num_layers=1,
     encoder_detail_enhance_layers=2,
     base_fusion='base',
+    decoder_block='auto',
 ):
     backbone = str(backbone or 'restormer').lower()
+    decoder_block = resolve_cddfuse_decoder_block(decoder_block, backbone)
     if backbone == 'fast':
+        if decoder_block != 'naf':
+            raise ValueError("backbone='fast' only supports decoder_block='auto' or 'naf'.")
         return (
             FastRestormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
             FastRestormer_Decoder(),
@@ -980,7 +1144,7 @@ def build_cddfuse_modules(
     if backbone == 'restormer':
         return (
             Restormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
-            Restormer_Decoder(),
+            Restormer_Decoder(block_type=decoder_block),
             _build_base_fusion_module(base_fusion, backbone),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
         )
@@ -1034,6 +1198,29 @@ def _strip_module_prefixes(state_dict):
         key[7:] if isinstance(key, str) and key.startswith('module.') else key
         for key in state_dict.keys()
     ]
+
+
+def infer_cddfuse_decoder_block(checkpoint, backbone=None):
+    decoder_block = checkpoint.get('decoder_block') if isinstance(checkpoint, dict) else None
+    if decoder_block:
+        return resolve_cddfuse_decoder_block(decoder_block, backbone or infer_cddfuse_backbone(checkpoint))
+
+    decoder_state = checkpoint.get('DIDF_Decoder', {}) if isinstance(checkpoint, dict) else {}
+    keys = _strip_module_prefixes(decoder_state)
+    if any(str(key).startswith('encoder_level2.') and '.attn_g.' in str(key) for key in keys):
+        return 'htb'
+    if any(str(key).startswith('encoder_level2.') and '.dwconv_5.' in str(key) for key in keys):
+        return 'htb'
+    if any(str(key).startswith('encoder_level2.') and '.conv1.' in str(key) for key in keys):
+        return 'naf'
+    if any(str(key).startswith('encoder_level2.') and str(key).endswith(('beta', 'gamma')) for key in keys):
+        return 'naf'
+    if any(str(key).startswith('encoder_level2.') and '.attn.' in str(key) for key in keys):
+        return 'restormer'
+    if any(str(key).startswith('encoder_level2.') and '.norm1.' in str(key) for key in keys):
+        return 'restormer'
+
+    return resolve_cddfuse_decoder_block('auto', backbone or infer_cddfuse_backbone(checkpoint))
 
 
 def infer_cddfuse_base_fusion(checkpoint):

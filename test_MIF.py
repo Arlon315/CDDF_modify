@@ -4,6 +4,7 @@ from net import (
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
+    infer_cddfuse_decoder_block,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
@@ -38,6 +39,7 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
+            decoder_block=infer_cddfuse_decoder_block(checkpoint),
         )
         Encoder = nn.DataParallel(encoder_module).to(device)
         Decoder = nn.DataParallel(decoder_module).to(device)

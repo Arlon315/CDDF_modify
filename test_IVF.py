@@ -5,6 +5,7 @@ from net import (
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
+    infer_cddfuse_decoder_block,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
@@ -132,6 +133,7 @@ def main():
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
+            decoder_block=infer_cddfuse_decoder_block(checkpoint),
         )
         encoder_module.detailFeature = DetailFeatureExtraction(num_layers=infer_encoder_detail_num_layers(checkpoint))
         Encoder = nn.DataParallel(encoder_module).to(device)
