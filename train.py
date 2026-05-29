@@ -38,19 +38,19 @@ Configure our network
 '''
 
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 criteria_fusion = Fusionloss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
-parser.add_argument("--resume", type=str, default="models/Res_CGA_DEConv/CDDFuse_restormer_cga_deconv2_05-19-20-20_epoch_030.pth", help="Path to a checkpoint to resume from.")
+parser.add_argument("--resume", type=str, default="", help="Path to a checkpoint to resume from.")
 parser.add_argument(
     "--resume_mode",
     choices=("auto", "full", "pretrain"),
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/decoder_filter/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/MCAM_HTB/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     "--decoder_block",
     choices=("auto", "htb", "restormer", "naf"),
-    default="auto",
+    default="htb",
     help="Decoder reconstruction block. auto uses HTB for restormer and NAF for fast.",
 )
 parser.add_argument(
@@ -98,7 +98,7 @@ coeff_decomp = 2.      # alpha2 and alpha4
 coeff_tv = 5.
 
 clip_grad_norm_value = 0.01
-optim_step = 15
+optim_step = 20
 optim_gamma = 0.5
 
 
@@ -139,7 +139,7 @@ Loss_ssim = kornia.losses.SSIMLoss(11, reduction='mean')
 trainloader = DataLoader(H5Dataset(r"data/MSRS_train_imgsize_128_stride_200.h5"),
                          batch_size=batch_size,
                          shuffle=True,
-                         num_workers=0)
+                         num_workers=16)
 
 loader = {'train': trainloader, }
 timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M")

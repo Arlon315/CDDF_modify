@@ -235,3 +235,5 @@ test_img/
 .vscode/
 
 /test_result/
+
+/data/
