@@ -313,14 +313,9 @@ class SS2D_cross_new(nn.Module):
         else:
             self.out_norm = nn.LayerNorm(d_inner)
 
-        self.forward_core = {
-            "v0": self.forward_corev0,
-            "v0_seq": self.forward_corev0_seq,
-            "v1": self.forward_corev2,
-            "v2": self.forward_corev2,
-            "share_ssm": self.forward_corev0_share_ssm,
-            "share_a": self.forward_corev0_share_a,
-        }.get(forward_type, self.forward_corev2)
+        if forward_type not in ("v1", "v2"):
+            raise NotImplementedError("SS2D_cross_new only enables forward_type='v2' in this project.")
+        self.forward_core_type = forward_type
         self.k = 4 if forward_type not in ("share_ssm",) else 1
         self.k2 = self.k if forward_type not in ("share_a",) else 1
 
@@ -482,7 +477,7 @@ class SS2D_cross_new(nn.Module):
             x1, z1 = xz1.chunk(2, dim=-1)
             x2, z2 = xz2.chunk(2, dim=-1)
 
-        y = self.forward_core(x1, x2, channel_first=(self.d_conv > 1), step_size=self.step_size)
+        y = self.forward_corev2(x1, x2, channel_first=(self.d_conv > 1), step_size=self.step_size)
         y = y * z1 + y * z2
         return self.dropout(self.out_proj(y))
 
