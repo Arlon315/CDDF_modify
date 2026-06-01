@@ -41,8 +41,8 @@ def is_low_contrast(image, fraction_threshold=0.1, lower_percentile=10,
     return ratio < fraction_threshold
 
 parser = argparse.ArgumentParser(description="Preprocess paired MSRS images into H5 patches.")
-data_path = os.path.expanduser(r"~/autodl-tmp/dataSets")
-dataset_root = os.path.join(data_path, "MSRS", "train")
+data_path = os.path.expanduser(r"~/rivermind-data/dataSets")
+dataset_root = os.path.join(data_path, "MSRS-main", "train")
 parser.add_argument("--ir_train_path", type=str, default=os.path.join(dataset_root, "ir"))
 parser.add_argument("--vi_train_path", type=str, default=os.path.join(dataset_root, "vi"))
 parser.add_argument("--data_name", type=str, default="MSRS_train")

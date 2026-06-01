@@ -43,7 +43,7 @@ criteria_fusion = Fusionloss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
-parser.add_argument("--resume", type=str, default="", help="Path to a checkpoint to resume from.")
+parser.add_argument("--resume", type=str, default="models/MCAM_HTB/restormer_htb_cga_windowMCAM_05-29-17-14_epoch_050.pth", help="Path to a checkpoint to resume from.")
 parser.add_argument(
     "--resume_mode",
     choices=("auto", "full", "pretrain"),
