@@ -26,7 +26,7 @@ import datetime
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from utils.loss import Fusionloss, cc
+from utils.loss import Fusionloss, PixelBSCLLoss, cc
 import kornia
 
 
@@ -40,6 +40,7 @@ Configure our network
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 criteria_fusion = Fusionloss()
+criteria_pixel_bscl = PixelBSCLLoss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
@@ -96,6 +97,7 @@ coeff_mse_loss_VF = 1. # alpha1
 coeff_mse_loss_IF = 1.
 coeff_decomp = 2.      # alpha2 and alpha4
 coeff_tv = 5.
+coeff_pixel_bscl = 0.05
 
 clip_grad_norm_value = 0.01
 optim_step = 20
@@ -441,8 +443,9 @@ for epoch in range(start_epoch, num_epochs):
             cc_loss_D = cc(feature_V_D, feature_I_D)
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
             fusionloss, _,_ ,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
+            pixel_bscl_loss = criteria_pixel_bscl(data_VIS, data_IR, data_Fuse)
             
-            loss = fusionloss + coeff_decomp * loss_decomp
+            loss = fusionloss + coeff_decomp * loss_decomp + coeff_pixel_bscl * pixel_bscl_loss
             loss.backward()
             nn.utils.clip_grad_norm_(
                 DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)

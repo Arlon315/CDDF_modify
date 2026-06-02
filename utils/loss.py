@@ -130,6 +130,56 @@ class MaxAmpFocalFrequencyLoss(nn.Module):
 
 
 
+class PixelBSCLLoss(nn.Module):
+    def __init__(self, eps=1e-6):
+        super(PixelBSCLLoss, self).__init__()
+        self.eps = eps
+
+    def _haar_decompose(self, x):
+        h = x.shape[-2] - x.shape[-2] % 2
+        w = x.shape[-1] - x.shape[-1] % 2
+        x = x[:, :, :h, :w].float()
+
+        x00 = x[:, :, 0::2, 0::2]
+        x01 = x[:, :, 0::2, 1::2]
+        x10 = x[:, :, 1::2, 0::2]
+        x11 = x[:, :, 1::2, 1::2]
+
+        low = (x00 + x01 + x10 + x11) * 0.5
+        high_lh = (x00 + x01 - x10 - x11) * 0.5
+        high_hl = (x00 - x01 + x10 - x11) * 0.5
+        high_hh = (x00 - x01 - x10 + x11) * 0.5
+        high = torch.cat((high_lh, high_hl, high_hh), dim=1)
+        return high, low
+
+    def _mean_l1_to_sources(self, target, source_a, source_b):
+        return 0.5 * (
+            F.l1_loss(target, source_a) + F.l1_loss(target, source_b)
+        )
+
+    def forward(self, image_vis, image_ir, generate_img):
+        image_y = image_vis[:, :1, :, :]
+        fused_high, fused_low = self._haar_decompose(generate_img)
+        vis_high, vis_low = self._haar_decompose(image_y)
+        ir_high, ir_low = self._haar_decompose(image_ir)
+
+        repeat_factor = fused_high.shape[1] // fused_low.shape[1]
+        fused_low_high_shape = fused_low.repeat(1, repeat_factor, 1, 1)
+        vis_low_high_shape = vis_low.repeat(1, repeat_factor, 1, 1)
+        ir_low_high_shape = ir_low.repeat(1, repeat_factor, 1, 1)
+
+        pos_high = self._mean_l1_to_sources(fused_high, vis_high, ir_high).pow(2)
+        neg_high = self._mean_l1_to_sources(
+            fused_high, vis_low_high_shape, ir_low_high_shape
+        ).pow(2)
+        pos_low = self._mean_l1_to_sources(fused_low, vis_low, ir_low).pow(2)
+        neg_low = self._mean_l1_to_sources(
+            fused_low_high_shape, vis_high, ir_high
+        ).pow(2)
+
+        return pos_high / (neg_high + self.eps) + pos_low / (neg_low + self.eps)
+
+
 
 class Fusionloss(nn.Module):
     def __init__(self):
@@ -137,15 +187,15 @@ class Fusionloss(nn.Module):
         self.sobelconv=Sobelxy()
 
         # 频率损失
-        self.freq_loss = MaxAmpFocalFrequencyLoss(
-            loss_weight=0.03,
-            alpha=1.0,
-            patch_factor=1,
-            high_freq_only=True,
-            high_start=0.08,
-            log_matrix=False,
-            batch_matrix=False,
-        )
+        # self.freq_loss = MaxAmpFocalFrequencyLoss(
+        #     loss_weight=0.03,
+        #     alpha=1.0,
+        #     patch_factor=1,
+        #     high_freq_only=True,
+        #     high_start=0.08,
+        #     log_matrix=False,
+        #     batch_matrix=False,
+        # )
 
 
     def forward(self,image_vis,image_ir,generate_img):
