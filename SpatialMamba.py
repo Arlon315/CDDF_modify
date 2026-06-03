@@ -116,10 +116,10 @@ class SpatialMambaBaseLayer(nn.Module):
             in_features=dim,
             ffn_expansion_factor=ffn_expansion_factor
         )
-        self.alpha = nn.Parameter(torch.zeros(1))
+        # self.alpha = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
-        x = x + torch.tanh(self.alpha) * self.spatial_mamba(self.norm1(x))
+        x = x + self.spatial_mamba(self.norm1(x))
         x = x + self.mlp(self.norm2(x))
         return x
 
