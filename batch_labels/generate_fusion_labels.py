@@ -346,6 +346,8 @@ class CDDFuseAdapter(BaseFusionAdapter):
                 fuse_detail_features,
                 infer_cddfuse_base_fusion,
                 infer_cddfuse_backbone,
+                infer_cddfuse_decoder_block,
+                infer_cddfuse_encoder_base_feature,
                 infer_cddfuse_detail_fusion,
                 infer_cddfuse_detail_num_layers,
             )
@@ -361,7 +363,9 @@ class CDDFuseAdapter(BaseFusionAdapter):
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            base_fusion=infer_cddfuse_base_fusion(checkpoint))
+            encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
+            base_fusion=infer_cddfuse_base_fusion(checkpoint),
+            decoder_block=infer_cddfuse_decoder_block(checkpoint))
         self.fuse_base_features = fuse_base_features
         self.fuse_detail_features = fuse_detail_features
         self.encoder = self.encoder.to(self.device)

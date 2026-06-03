@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+from SpatialMamba import SpatialMambaBaseFeature
 
 
 def rearrange(x, pattern, **kwargs):
@@ -991,6 +992,22 @@ def make_feature_blocks(block_type, dim, num_blocks, num_heads, ffn_expansion_fa
     raise ValueError(f"Unsupported block_type: {block_type}")
 
 
+def resolve_cddfuse_encoder_base_feature(encoder_base_feature=None, backbone='restormer'):
+    backbone = str(backbone or 'restormer').lower()
+    encoder_base_feature = str(encoder_base_feature or 'auto').lower()
+    if backbone == 'fast':
+        if encoder_base_feature in ('auto', 'naf', 'fast'):
+            return 'naf'
+        raise ValueError(f"Unsupported encoder_base_feature for fast backbone: {encoder_base_feature}")
+    if encoder_base_feature == 'auto':
+        return 'spatial_mamba'
+    if encoder_base_feature in ('spatial_mamba', 'spatialmamba', 'mamba'):
+        return 'spatial_mamba'
+    if encoder_base_feature in ('base', 'attention', 'base_attention', 'restormer'):
+        return 'base'
+    raise ValueError(f"Unsupported encoder_base_feature: {encoder_base_feature}")
+
+
 class Restormer_Encoder(nn.Module):
     def __init__(self,
                  inp_channels=1,
@@ -1003,6 +1020,7 @@ class Restormer_Encoder(nn.Module):
                  LayerNorm_type='WithBias',
                  block_type='restormer',
                  detail_enhance_layers=2,
+                 encoder_base_feature='spatial_mamba',
                  ):
 
         super(Restormer_Encoder, self).__init__()
@@ -1015,7 +1033,11 @@ class Restormer_Encoder(nn.Module):
             self.baseFeature = NAFBlock(dim=dim)
             self.detailFeature = DetailFeatureExtraction(num_layers=1)
         else:
-            self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads = heads[2])
+            encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, 'restormer')
+            if encoder_base_feature == 'spatial_mamba':
+                self.baseFeature = SpatialMambaBaseFeature(dim=dim, num_layers=1, share_mamba=False)
+            else:
+                self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
             self.detailFeature = DetailFeatureExtraction(num_layers=1)
         detail_enhance_layers = int(detail_enhance_layers or 0)
         if detail_enhance_layers > 0:
@@ -1127,11 +1149,13 @@ def build_cddfuse_modules(
     detail_fusion='cga',
     detail_fusion_num_layers=1,
     encoder_detail_enhance_layers=2,
+    encoder_base_feature='auto',
     base_fusion='base',
     decoder_block='auto',
 ):
     backbone = str(backbone or 'restormer').lower()
     decoder_block = resolve_cddfuse_decoder_block(decoder_block, backbone)
+    encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, backbone)
     if backbone == 'fast':
         if decoder_block != 'naf':
             raise ValueError("backbone='fast' only supports decoder_block='auto' or 'naf'.")
@@ -1143,7 +1167,10 @@ def build_cddfuse_modules(
         )
     if backbone == 'restormer':
         return (
-            Restormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
+            Restormer_Encoder(
+                detail_enhance_layers=encoder_detail_enhance_layers,
+                encoder_base_feature=encoder_base_feature,
+            ),
             Restormer_Decoder(block_type=decoder_block),
             _build_base_fusion_module(base_fusion, backbone),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
@@ -1168,10 +1195,31 @@ def infer_cddfuse_backbone(checkpoint):
         return 'fast'
     if any(str(key).startswith('encoder_level1.') and '.attn.' in str(key) for key in keys):
         return 'restormer'
+    if any(str(key).startswith('baseFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
+        return 'restormer'
     if any(str(key).startswith('baseFeature.attn.') for key in keys):
         return 'restormer'
 
     return 'restormer'
+
+
+def infer_cddfuse_encoder_base_feature(checkpoint):
+    backbone = infer_cddfuse_backbone(checkpoint)
+    encoder_base_feature = checkpoint.get('encoder_base_feature') if isinstance(checkpoint, dict) else None
+    if encoder_base_feature:
+        return resolve_cddfuse_encoder_base_feature(encoder_base_feature, backbone)
+
+    if backbone == 'fast':
+        return 'naf'
+
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    keys = _strip_module_prefixes(encoder_state)
+    if any(str(key).startswith('baseFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
+        return 'spatial_mamba'
+    if any(str(key).startswith('baseFeature.attn.') for key in keys):
+        return 'base'
+
+    return resolve_cddfuse_encoder_base_feature('auto', backbone)
 
 
 def infer_cddfuse_detail_fusion(checkpoint):
