@@ -54,7 +54,7 @@ parser.add_argument(
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/MCAM_HTB/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/SM_MCAM_FMEM_HTB/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
@@ -93,7 +93,7 @@ decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
 encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
 base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
-model_str = f"{args.backbone}{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}"
+model_str = f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_FMEM"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -129,7 +129,7 @@ DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
 DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
 FMEMLayer = nn.DataParallel(
-    FusionMambaEnhanceModule(dim=64, share_mamba=True)
+    FusionMambaEnhanceModule(dim=64, share_mamba=False)
 ).to(device)
 
 # optimizer, scheduler and loss function

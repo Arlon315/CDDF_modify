@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 from SpatialMamba import LayerNorm, SpatialMamba4Path
@@ -42,7 +41,6 @@ class FusionMambaEnhanceModule(nn.Module):
         self.base_linear = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
         self.merge_linear = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
         self.eca = EfficientChannelAttention(dim=dim, kernel_size=eca_kernel_size)
-        self.residual_scale = nn.Parameter(torch.zeros(1))
 
     def forward(self, detail_feature, base_feature):
         detail_context = self.detail_dwconv(self.detail_proj(self.detail_norm(detail_feature)))
@@ -53,8 +51,7 @@ class FusionMambaEnhanceModule(nn.Module):
 
         detail_enhanced = global_gate * self.detail_linear(detail_feature)
         base_enhanced = global_gate * self.base_linear(base_feature)
-        enhanced = self.merge_linear(detail_enhanced + base_enhanced)
-        enhanced = self.eca(enhanced) + enhanced
+        enhanced_sum = detail_enhanced + base_enhanced
+        enhanced = self.eca(self.merge_linear(enhanced_sum)) + enhanced_sum
 
-        residual = detail_feature + base_feature
-        return residual + torch.tanh(self.residual_scale) * enhanced
+        return enhanced + detail_feature + base_feature
