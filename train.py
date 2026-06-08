@@ -18,6 +18,7 @@ from net import (
     resolve_cddfuse_encoder_base_feature,
     resolve_cddfuse_decoder_block,
 )
+from FMEM import FusionMambaEnhanceModule
 from utils.dataset import H5Dataset
 import argparse
 import os
@@ -64,7 +65,7 @@ parser.add_argument(
 parser.add_argument(
     "--encoder_base_feature",
     choices=("auto", "spatial_mamba", "base"),
-    default="autospatial_mamba",
+    default="auto",
     help="Encoder base branch. auto uses Spatial Mamba for restormer and NAF for fast.",
 )
 parser.add_argument(
@@ -127,6 +128,9 @@ DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
 DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
+FMEMLayer = nn.DataParallel(
+    FusionMambaEnhanceModule(dim=64, share_mamba=True)
+).to(device)
 
 # optimizer, scheduler and loss function
 optimizer1 = torch.optim.Adam(
@@ -137,11 +141,14 @@ optimizer3 = torch.optim.Adam(
     BaseFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer4 = torch.optim.Adam(
     DetailFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
+optimizer5 = torch.optim.Adam(
+    FMEMLayer.parameters(), lr=lr, weight_decay=weight_decay)
 
 scheduler1 = torch.optim.lr_scheduler.StepLR(optimizer1, step_size=optim_step, gamma=optim_gamma)
 scheduler2 = torch.optim.lr_scheduler.StepLR(optimizer2, step_size=optim_step, gamma=optim_gamma)
 scheduler3 = torch.optim.lr_scheduler.StepLR(optimizer3, step_size=optim_step, gamma=optim_gamma)
 scheduler4 = torch.optim.lr_scheduler.StepLR(optimizer4, step_size=optim_step, gamma=optim_gamma)
+scheduler5 = torch.optim.lr_scheduler.StepLR(optimizer5, step_size=optim_step, gamma=optim_gamma)
 
 MSELoss = nn.MSELoss()  
 L1Loss = nn.L1Loss()
@@ -184,14 +191,17 @@ def build_checkpoint(epoch):
         'DIDF_Decoder': DIDF_Decoder.state_dict(),
         'BaseFuseLayer': BaseFuseLayer.state_dict(),
         'DetailFuseLayer': DetailFuseLayer.state_dict(),
+        'FMEMLayer': FMEMLayer.state_dict(),
         'optimizer1': optimizer1.state_dict(),
         'optimizer2': optimizer2.state_dict(),
         'optimizer3': optimizer3.state_dict(),
         'optimizer4': optimizer4.state_dict(),
+        'optimizer5': optimizer5.state_dict(),
         'scheduler1': scheduler1.state_dict(),
         'scheduler2': scheduler2.state_dict(),
         'scheduler3': scheduler3.state_dict(),
         'scheduler4': scheduler4.state_dict(),
+        'scheduler5': scheduler5.state_dict(),
     }
 
 
@@ -333,10 +343,8 @@ if args.resume:
             )
 
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
-    if decoder_block_matches:
-        load_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
-    else:
-        load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
+    load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
+    load_state_if_present(FMEMLayer, checkpoint, 'FMEMLayer', required=False)
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
     if resume_mode == "full":
@@ -346,10 +354,12 @@ if args.resume:
         load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
         load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
         load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
+        load_optimizer_if_present(optimizer5, checkpoint, 'optimizer5')
         load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
         load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
         load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
+        load_scheduler_if_present(scheduler5, checkpoint, 'scheduler5')
         start_epoch = checkpoint_epoch
         print(f"Resumed full checkpoint from {resume_path} at epoch {start_epoch}.")
     else:
@@ -392,6 +402,11 @@ if args.resume:
         if detail_fusion_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
             load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
+        if 'FMEMLayer' in checkpoint:
+            load_optimizer_if_present(optimizer5, checkpoint, 'optimizer5')
+            load_scheduler_if_present(scheduler5, checkpoint, 'scheduler5')
+        else:
+            skipped_resume_parts.append('FMEMLayer/optimizer5/scheduler5')
         start_epoch = max(checkpoint_epoch, epoch_gap)
         skipped_message = ', '.join(skipped_resume_parts)
         print(
@@ -423,22 +438,27 @@ for epoch in range(start_epoch, num_epochs):
         DIDF_Decoder.train()
         BaseFuseLayer.train()
         DetailFuseLayer.train()
+        FMEMLayer.train()
 
         DIDF_Encoder.zero_grad()
         DIDF_Decoder.zero_grad()
         BaseFuseLayer.zero_grad()
         DetailFuseLayer.zero_grad()
+        FMEMLayer.zero_grad()
 
         optimizer1.zero_grad()
         optimizer2.zero_grad()
         optimizer3.zero_grad()
         optimizer4.zero_grad()
+        optimizer5.zero_grad()
 
         if epoch < epoch_gap: #Phase I
             feature_V_B, feature_V_D, _ = DIDF_Encoder(data_VIS)
             feature_I_B, feature_I_D, _ = DIDF_Encoder(data_IR)
-            data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_B, feature_V_D)
-            data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_B, feature_I_D)
+            feature_V_E = FMEMLayer(feature_V_D, feature_V_B)
+            feature_I_E = FMEMLayer(feature_I_D, feature_I_B)
+            data_VIS_hat, _ = DIDF_Decoder(data_VIS, fused_feature=feature_V_E)
+            data_IR_hat, _ = DIDF_Decoder(data_IR, fused_feature=feature_I_E)
 
             cc_loss_B = cc(feature_V_B, feature_I_B)
             cc_loss_D = cc(feature_V_D, feature_I_D)
@@ -458,14 +478,18 @@ for epoch in range(start_epoch, num_epochs):
                 DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                FMEMLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             optimizer1.step()  
             optimizer2.step()
+            optimizer5.step()
         else:  #Phase II
             feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
             feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
             feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
             feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
-            data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
+            feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
+            data_Fuse, feature_F = DIDF_Decoder(data_VIS, fused_feature=feature_F_E)
 
             
             mse_loss_V = 5*Loss_ssim(data_VIS, data_Fuse) + MSELoss(data_VIS, data_Fuse)
@@ -487,10 +511,13 @@ for epoch in range(start_epoch, num_epochs):
                 BaseFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DetailFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                FMEMLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             optimizer1.step()  
             optimizer2.step()
             optimizer3.step()
             optimizer4.step()
+            optimizer5.step()
 
         loss_value = loss.item()
         epoch_loss += loss_value
@@ -519,6 +546,7 @@ for epoch in range(start_epoch, num_epochs):
 
     scheduler1.step()  
     scheduler2.step()
+    scheduler5.step()
     if not epoch < epoch_gap:
         scheduler3.step()
         scheduler4.step()
@@ -531,6 +559,8 @@ for epoch in range(start_epoch, num_epochs):
         optimizer3.param_groups[0]['lr'] = 1e-6
     if optimizer4.param_groups[0]['lr'] <= 1e-6:
         optimizer4.param_groups[0]['lr'] = 1e-6
+    if optimizer5.param_groups[0]['lr'] <= 1e-6:
+        optimizer5.param_groups[0]['lr'] = 1e-6
 
     finished_epoch = epoch + 1
     if args.save_interval > 0 and finished_epoch % args.save_interval == 0:

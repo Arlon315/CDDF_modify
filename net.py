@@ -1058,7 +1058,7 @@ class Restormer_Decoder(nn.Module):
                  inp_channels=1,
                  out_channels=1,
                  dim=64,
-                 num_blocks=[4, 4],
+                 num_blocks=[4, 2],
                  heads=[8, 8, 8],
                  ffn_expansion_factor=None,
                  bias=False,
@@ -1080,9 +1080,16 @@ class Restormer_Decoder(nn.Module):
             nn.Conv2d(int(dim)//2, out_channels, kernel_size=3,
                       stride=1, padding=1, bias=bias),)
         self.sigmoid = nn.Sigmoid()              
-    def forward(self, inp_img, base_feature, detail_feature):
-        out_enc_level0 = torch.cat((base_feature, detail_feature), dim=1)
-        out_enc_level0 = self.reduce_channel(out_enc_level0)
+
+    def forward(self, inp_img, base_feature=None, detail_feature=None, fused_feature=None):
+        if fused_feature is None:
+            if base_feature is None or detail_feature is None:
+                raise ValueError(
+                    "base_feature and detail_feature are required when fused_feature is not provided.")
+            out_enc_level0 = torch.cat((base_feature, detail_feature), dim=1)
+            out_enc_level0 = self.reduce_channel(out_enc_level0)
+        else:
+            out_enc_level0 = fused_feature
         out_enc_level1 = self.encoder_level2(out_enc_level0)
         if inp_img is not None:
             out_enc_level1 = self.output(out_enc_level1) + inp_img

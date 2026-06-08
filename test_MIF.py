@@ -9,6 +9,7 @@ from net import (
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
+from FMEM import FusionMambaEnhanceModule
 import os
 import numpy as np
 from utils.Evaluator import Evaluator
@@ -35,6 +36,7 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(ckpt_path, map_location=device)
+        use_fmem = 'FMEMLayer' in checkpoint
         encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
@@ -47,15 +49,24 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         Decoder = nn.DataParallel(decoder_module).to(device)
         BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
         DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
+        FMEMLayer = None
+        if use_fmem:
+            FMEMLayer = nn.DataParallel(
+                FusionMambaEnhanceModule(dim=64, share_mamba=True)
+            ).to(device)
 
         Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
-        Decoder.load_state_dict(checkpoint['DIDF_Decoder'])
+        Decoder.load_state_dict(checkpoint['DIDF_Decoder'], strict=False)
         BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
         DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
+        if use_fmem:
+            FMEMLayer.load_state_dict(checkpoint['FMEMLayer'])
         Encoder.eval()
         Decoder.eval()
         BaseFuseLayer.eval()
         DetailFuseLayer.eval()
+        if use_fmem:
+            FMEMLayer.eval()
 
         with torch.no_grad():
             for img_name in os.listdir(os.path.join(test_folder,dataset_name.split('_')[0])):
@@ -69,10 +80,12 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
                 feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
                 feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
                 feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
-                if ckpt_path==CDDFuse_path:
-                    data_Fuse, _ = Decoder(data_IR+data_VIS, feature_F_B, feature_F_D)
+                decoder_input = data_IR + data_VIS if ckpt_path == CDDFuse_path else None
+                if use_fmem:
+                    feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
+                    data_Fuse, _ = Decoder(decoder_input, fused_feature=feature_F_E)
                 else:
-                    data_Fuse, _ = Decoder(None, feature_F_B, feature_F_D)
+                    data_Fuse, _ = Decoder(decoder_input, feature_F_B, feature_F_D)
                 data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
                 fi = np.squeeze((data_Fuse * 255).cpu().numpy())
                 img_save(fi, img_name.split(sep='.')[0], test_out_folder)
