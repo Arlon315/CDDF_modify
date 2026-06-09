@@ -10,7 +10,7 @@ from net import (
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
-from FMEM import FusionMambaEnhanceModule
+from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba
 import argparse
 import os
 import numpy as np
@@ -147,7 +147,10 @@ def main():
         FMEMLayer = None
         if use_fmem:
             FMEMLayer = nn.DataParallel(
-                FusionMambaEnhanceModule(dim=64, share_mamba=True)
+                FusionMambaEnhanceModule(
+                    dim=64,
+                    share_mamba=infer_fmem_share_mamba(checkpoint),
+                )
             ).to(device)
 
         Encoder.load_state_dict(checkpoint['DIDF_Encoder'])

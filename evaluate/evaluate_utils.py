@@ -36,6 +36,7 @@ from net import (  # noqa: E402
     infer_cddfuse_detail_num_layers,
     infer_cddfuse_encoder_detail_enhance_layers,
 )
+from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba  # noqa: E402
 
 try:
     from evaluate.performance import METRIC_COLUMNS, PAPER_PROFILE, compute_all_metrics  # type: ignore
@@ -90,22 +91,33 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
     decoder = decoder.to(device)
     base_fuse = base_fuse.to(device)
     detail_fuse = detail_fuse.to(device)
+    fmem = None
+    if "FMEMLayer" in checkpoint:
+        fmem = FusionMambaEnhanceModule(
+            dim=64,
+            share_mamba=infer_fmem_share_mamba(checkpoint),
+        ).to(device)
 
     encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
     decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
     base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
     detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))
+    if fmem is not None:
+        fmem.load_state_dict(_strip_module_prefix(checkpoint["FMEMLayer"]))
 
     encoder.eval()
     decoder.eval()
     base_fuse.eval()
     detail_fuse.eval()
+    if fmem is not None:
+        fmem.eval()
 
     bundle = {
         "encoder": encoder,
         "decoder": decoder,
         "base_fuse": base_fuse,
         "detail_fuse": detail_fuse,
+        "fmem": fmem,
     }
     _MODEL_CACHE[cache_key] = bundle
     return bundle
@@ -287,7 +299,11 @@ def run_fusion_prediction(
         feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
         feature_f_b = fuse_base_features(bundle["base_fuse"], feature_i_b, feature_v_b)
         feature_f_d = fuse_detail_features(bundle["detail_fuse"], feature_i_d, feature_v_d)
-        fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
+        if bundle["fmem"] is not None:
+            feature_f_e = bundle["fmem"](feature_f_d, feature_f_b)
+            fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
+        else:
+            fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
         fused_tensor = _normalize_fused_tensor(fused_tensor)
 
     fused_float01 = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(np.float32, copy=False)

@@ -3,6 +3,22 @@ import torch.nn as nn
 from SpatialMamba import LayerNorm, SpatialMamba4Path
 
 
+def infer_fmem_share_mamba(checkpoint):
+    if isinstance(checkpoint, dict) and 'fmem_share_mamba' in checkpoint:
+        return bool(checkpoint['fmem_share_mamba'])
+
+    state_dict = checkpoint.get('FMEMLayer', {}) if isinstance(checkpoint, dict) else {}
+    keys = [
+        key[7:] if isinstance(key, str) and key.startswith('module.') else key
+        for key in state_dict.keys()
+    ]
+    if any(str(key).startswith('global_mixer.mambas.') for key in keys):
+        return False
+    if any(str(key).startswith('global_mixer.mamba.') for key in keys):
+        return True
+    return False
+
+
 class EfficientChannelAttention(nn.Module):
     def __init__(self, dim=64, kernel_size=3):
         super(EfficientChannelAttention, self).__init__()
