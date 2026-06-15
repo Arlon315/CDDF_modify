@@ -18,7 +18,11 @@ from net import (
     resolve_cddfuse_encoder_base_feature,
     resolve_cddfuse_decoder_block,
 )
-from FMEM import FusionMambaEnhanceModule
+from FMEM import (
+    FUSION_ENHANCE_CROSS_HISTOGRAM,
+    build_fusion_enhance_module,
+    infer_fusion_enhance_type,
+)
 from utils.dataset import H5Dataset
 import argparse
 import os
@@ -90,10 +94,14 @@ parser.add_argument(
 args = parser.parse_args()
 encoder_base_feature = resolve_cddfuse_encoder_base_feature(args.encoder_base_feature, args.backbone)
 decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
+fusion_enhance_type = FUSION_ENHANCE_CROSS_HISTOGRAM
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
 encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
 base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
-model_str = f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_FMEM"
+model_str = (
+    f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}"
+    f"{base_fusion_suffix}_CrossHistogramFMEM"
+)
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -129,7 +137,12 @@ DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
 DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
 FMEMLayer = nn.DataParallel(
-    FusionMambaEnhanceModule(dim=64, share_mamba=False)
+    build_fusion_enhance_module(
+        fusion_enhance_type=fusion_enhance_type,
+        dim=64,
+        num_heads=4,
+        ffn_expansion_factor=2.5,
+    )
 ).to(device)
 
 # optimizer, scheduler and loss function
@@ -183,6 +196,7 @@ def build_checkpoint(epoch):
         'decoder_block': decoder_block,
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
+        'fusion_enhance_type': fusion_enhance_type,
         'encoder_detail_enhance': 'deconv',
         'encoder_detail_enhance_layers': 2,
         'decoder_freq_enhance': 'dynamic_filter',
@@ -308,15 +322,23 @@ if args.resume:
     checkpoint_encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
     checkpoint_detail_fusion = infer_cddfuse_detail_fusion(checkpoint)
     checkpoint_base_fusion = infer_cddfuse_base_fusion(checkpoint)
+    checkpoint_fusion_enhance_type = infer_fusion_enhance_type(checkpoint)
     decoder_block_matches = checkpoint_decoder_block == decoder_block
     encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
     detail_fusion_matches = checkpoint_detail_fusion == args.detail_fusion
     base_fusion_matches = checkpoint_base_fusion == args.base_fusion
+    fusion_enhance_matches = checkpoint_fusion_enhance_type == fusion_enhance_type
     resume_mode = args.resume_mode
     if resume_mode == "auto":
         resume_mode = (
             "full"
-            if decoder_block_matches and encoder_base_feature_matches and detail_fusion_matches and base_fusion_matches
+            if (
+                decoder_block_matches
+                and encoder_base_feature_matches
+                and detail_fusion_matches
+                and base_fusion_matches
+                and fusion_enhance_matches
+            )
             else "pretrain"
         )
 
@@ -341,10 +363,22 @@ if args.resume:
                 f"Checkpoint base_fusion is '{checkpoint_base_fusion}', "
                 f"but current --base_fusion is '{args.base_fusion}'."
             )
+        if not fusion_enhance_matches:
+            raise ValueError(
+                f"Checkpoint fusion_enhance_type is '{checkpoint_fusion_enhance_type}', "
+                f"but current fusion_enhance_type is '{fusion_enhance_type}'."
+            )
 
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
-    load_state_if_present(FMEMLayer, checkpoint, 'FMEMLayer', required=False)
+    if fusion_enhance_matches:
+        load_state_if_present(FMEMLayer, checkpoint, 'FMEMLayer')
+    else:
+        print(
+            f"Skipped FMEMLayer: checkpoint fusion_enhance_type="
+            f"'{checkpoint_fusion_enhance_type}', current fusion_enhance_type="
+            f"'{fusion_enhance_type}'."
+        )
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
     if resume_mode == "full":
@@ -402,12 +436,16 @@ if args.resume:
         if detail_fusion_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
             load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
-        if 'FMEMLayer' in checkpoint:
+        if fusion_enhance_matches:
             load_optimizer_if_present(optimizer5, checkpoint, 'optimizer5')
             load_scheduler_if_present(scheduler5, checkpoint, 'scheduler5')
         else:
             skipped_resume_parts.append('FMEMLayer/optimizer5/scheduler5')
-        start_epoch = max(checkpoint_epoch, epoch_gap)
+        start_epoch = (
+            max(checkpoint_epoch, epoch_gap)
+            if fusion_enhance_matches
+            else epoch_gap
+        )
         skipped_message = ', '.join(skipped_resume_parts)
         print(
             f"Loaded Phase I pretrain from {resume_path}: "
@@ -415,7 +453,9 @@ if args.resume:
             f"current encoder_base_feature='{encoder_base_feature}'; "
             f"checkpoint decoder_block='{checkpoint_decoder_block}', current decoder_block='{decoder_block}'; "
             f"checkpoint detail_fusion='{checkpoint_detail_fusion}', current detail_fusion='{args.detail_fusion}'; "
-            f"checkpoint base_fusion='{checkpoint_base_fusion}', current base_fusion='{args.base_fusion}'. "
+            f"checkpoint base_fusion='{checkpoint_base_fusion}', current base_fusion='{args.base_fusion}'; "
+            f"checkpoint fusion_enhance_type='{checkpoint_fusion_enhance_type}', "
+            f"current fusion_enhance_type='{fusion_enhance_type}'. "
             f"Skipped {skipped_message}; starting at epoch {start_epoch}."
         )
 

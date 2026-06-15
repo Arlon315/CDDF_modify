@@ -9,7 +9,7 @@ from net import (
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
-from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba
+from FMEM import build_fusion_enhance_module
 import os
 import numpy as np
 from utils.Evaluator import Evaluator
@@ -52,9 +52,9 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         FMEMLayer = None
         if use_fmem:
             FMEMLayer = nn.DataParallel(
-                FusionMambaEnhanceModule(
+                build_fusion_enhance_module(
+                    checkpoint=checkpoint,
                     dim=64,
-                    share_mamba=infer_fmem_share_mamba(checkpoint),
                 )
             ).to(device)
 

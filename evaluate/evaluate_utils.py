@@ -36,7 +36,7 @@ from net import (  # noqa: E402
     infer_cddfuse_detail_num_layers,
     infer_cddfuse_encoder_detail_enhance_layers,
 )
-from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba  # noqa: E402
+from FMEM import build_fusion_enhance_module  # noqa: E402
 
 try:
     from evaluate.performance import METRIC_COLUMNS, PAPER_PROFILE, compute_all_metrics  # type: ignore
@@ -93,9 +93,9 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
     detail_fuse = detail_fuse.to(device)
     fmem = None
     if "FMEMLayer" in checkpoint:
-        fmem = FusionMambaEnhanceModule(
+        fmem = build_fusion_enhance_module(
+            checkpoint=checkpoint,
             dim=64,
-            share_mamba=infer_fmem_share_mamba(checkpoint),
         ).to(device)
 
     encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
