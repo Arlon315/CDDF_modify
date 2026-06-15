@@ -58,7 +58,7 @@ parser.add_argument(
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/SM_MCAM_FMEM_HTB/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/SM_MCAM_CrossHTB_HTB/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
