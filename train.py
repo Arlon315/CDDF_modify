@@ -51,7 +51,7 @@ criteria_pixel_bscl = PixelBSCLLoss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
-parser.add_argument("--resume", type=str, default="", help="Path to a checkpoint to resume from.")
+parser.add_argument("--resume", type=str, default="models/SM_MCAM_CrossHTB_HTB/_spatial_mamba_htb_cga_windowMCAM_CrossHistogramFMEM_06-15-03-09_epoch_030.pth", help="Path to a checkpoint to resume from.")
 parser.add_argument(
     "--resume_mode",
     choices=("auto", "full", "pretrain"),
