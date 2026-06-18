@@ -56,7 +56,7 @@ parser.add_argument(
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/SM_MCAM_FMEM_HTB/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/DEConv_Modify/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
@@ -67,7 +67,7 @@ parser.add_argument(
 parser.add_argument(
     "--encoder_base_feature",
     choices=("auto", "spatial_mamba", "base"),
-    default="auto",
+    default="spatial_mamba",
     help="Encoder base branch. auto uses Spatial Mamba for restormer and NAF for fast.",
 )
 parser.add_argument(
@@ -98,12 +98,12 @@ base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}
 model_str = f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_FMEM"
 
 # . Set the hyper-parameters for training
-num_epochs = 120 # total epoch
+num_epochs = 30 # total epoch
 epoch_gap = 30  # epoches of Phase I 
 
 lr = 1e-4
 weight_decay = 0
-batch_size = 8
+batch_size = 4
 GPU_number = os.environ['CUDA_VISIBLE_DEVICES']
 # Coefficients of the loss function
 coeff_mse_loss_VF = 1. # alpha1
@@ -111,7 +111,7 @@ coeff_mse_loss_IF = 1.
 coeff_decomp = 2.      # alpha2 and alpha4
 coeff_tv = 5.
 coeff_pixel_bscl = 0.08
-coeff_deconv_gate_l1 = 1e-5
+coeff_deconv_gate_l1 = 1e-4
 
 clip_grad_norm_value = 0.01
 optim_step = 20
