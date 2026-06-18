@@ -548,8 +548,9 @@ class Conv2d_vd(nn.Module):
 
 
 class DEConv(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, residual=False):
         super(DEConv, self).__init__()
+        self.residual = residual
         self.conv1_1 = Conv2d_cd(dim, dim, 3, bias=True)
         self.conv1_2 = Conv2d_hd(dim, dim, 3, bias=True)
         self.conv1_3 = Conv2d_vd(dim, dim, 3, bias=True)
@@ -583,7 +584,10 @@ class DEConv(nn.Module):
 
     def forward(self, x):
         weight, bias = self.get_equivalent_weight()
-        return F.conv2d(input=x, weight=weight, bias=bias, stride=1, padding=1, groups=1)
+        out = F.conv2d(input=x, weight=weight, bias=bias, stride=1, padding=1, groups=1)
+        if self.residual:
+            out = x + out
+        return out
 
 
 def deconv_gate_l1_loss(module):
@@ -1089,7 +1093,7 @@ class Restormer_Encoder(nn.Module):
             self.detailFeature = DetailFeatureExtraction(num_layers=1)
         detail_enhance_layers = int(detail_enhance_layers or 0)
         if detail_enhance_layers > 0:
-            self.detailEnhance = nn.Sequential(*[DEConv(dim) for _ in range(detail_enhance_layers)])
+            self.detailEnhance = nn.Sequential(*[DEConv(dim, residual=True) for _ in range(detail_enhance_layers)])
         else:
             self.detailEnhance = nn.Identity()
              
