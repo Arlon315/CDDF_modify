@@ -555,17 +555,65 @@ class DEConv(nn.Module):
         self.conv1_3 = Conv2d_vd(dim, dim, 3, bias=True)
         self.conv1_4 = Conv2d_ad(dim, dim, 3, bias=True)
         self.conv1_5 = nn.Conv2d(dim, dim, 3, padding=1, bias=True)
+        self.branch_weights = nn.Parameter(torch.ones(5))
 
-    def forward(self, x):
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                              missing_keys, unexpected_keys, error_msgs):
+        branch_key = prefix + 'branch_weights'
+        if branch_key not in state_dict:
+            state_dict[branch_key] = self.branch_weights.detach().clone()
+        super(DEConv, self)._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict,
+            missing_keys, unexpected_keys, error_msgs)
+
+    def get_equivalent_weight(self):
         w1, b1 = self.conv1_1.get_weight()
         w2, b2 = self.conv1_2.get_weight()
         w3, b3 = self.conv1_3.get_weight()
         w4, b4 = self.conv1_4.get_weight()
         w5, b5 = self.conv1_5.weight, self.conv1_5.bias
 
-        weight = w1 + w2 + w3 + w4 + w5
-        bias = b1 + b2 + b3 + b4 + b5
+        gates = self.branch_weights
+        weight = gates[0] * w1 + gates[1] * w2 + gates[2] * w3 + gates[3] * w4 + gates[4] * w5
+        bias = gates[0] * b1 + gates[1] * b2 + gates[2] * b3 + gates[3] * b4 + gates[4] * b5
+        return weight, bias
+
+    def gate_l1_loss(self):
+        return self.branch_weights.abs().sum()
+
+    def forward(self, x):
+        weight, bias = self.get_equivalent_weight()
         return F.conv2d(input=x, weight=weight, bias=bias, stride=1, padding=1, groups=1)
+
+
+def deconv_gate_l1_loss(module):
+    loss = None
+    for submodule in module.modules():
+        if isinstance(submodule, DEConv):
+            term = submodule.gate_l1_loss()
+            loss = term if loss is None else loss + term
+    if loss is not None:
+        return loss
+    try:
+        ref_param = next(module.parameters())
+        return ref_param.new_tensor(0.0)
+    except StopIteration:
+        return torch.tensor(0.0)
+
+
+def deconv_branch_weight_summary(module):
+    branch_names = ('CDC', 'HDC', 'VDC', 'ADC', 'VC')
+    summaries = []
+    for name, submodule in module.named_modules():
+        if isinstance(submodule, DEConv):
+            display_name = name[7:] if name.startswith('module.') else name
+            weights = submodule.branch_weights.detach().cpu().tolist()
+            weight_text = ', '.join(
+                f'{branch_name}={weight:.4f}'
+                for branch_name, weight in zip(branch_names, weights)
+            )
+            summaries.append(f'{display_name}: {weight_text}')
+    return '; '.join(summaries) if summaries else 'none'
 
 
 class SpatialAttention(nn.Module):

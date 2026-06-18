@@ -8,6 +8,8 @@ Import packages
 
 from net import (
     build_cddfuse_modules,
+    deconv_branch_weight_summary,
+    deconv_gate_l1_loss,
     fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
@@ -107,6 +109,7 @@ coeff_mse_loss_VF = 1. # alpha1
 coeff_mse_loss_IF = 1.
 coeff_decomp = 2.      # alpha2 and alpha4
 coeff_tv = 5.
+coeff_deconv_gate_l1 = 1e-5
 
 clip_grad_norm_value = 0.01
 optim_step = 20
@@ -178,6 +181,7 @@ def build_checkpoint(epoch):
         'accumulation_steps': accumulation_steps,
         'encoder_detail_enhance': 'deconv',
         'encoder_detail_enhance_layers': 2,
+        'deconv_gate_l1': coeff_deconv_gate_l1,
         'decoder_freq_enhance': 'dynamic_filter',
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
         'DIDF_Encoder': DIDF_Encoder.state_dict(),
@@ -448,9 +452,11 @@ for epoch in range(start_epoch, num_epochs):
                                    kornia.filters.SpatialGradient()(data_VIS_hat))
 
             loss_decomp =  (cc_loss_D) ** 2/ (1.01 + cc_loss_B)  
+            gate_l1_loss = deconv_gate_l1_loss(DIDF_Encoder)
 
             loss = coeff_mse_loss_VF * mse_loss_V + coeff_mse_loss_IF * \
-                   mse_loss_I + coeff_decomp * loss_decomp + coeff_tv * Gradient_loss
+                   mse_loss_I + coeff_decomp * loss_decomp + coeff_tv * Gradient_loss + \
+                   coeff_deconv_gate_l1 * gate_l1_loss
 
             (loss / accum_group_size).backward()
             if should_step:
@@ -477,8 +483,9 @@ for epoch in range(start_epoch, num_epochs):
             cc_loss_D = cc(feature_V_D, feature_I_D)
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
             fusionloss, _,_ ,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
+            gate_l1_loss = deconv_gate_l1_loss(DIDF_Encoder)
             
-            loss = fusionloss + coeff_decomp * loss_decomp
+            loss = fusionloss + coeff_decomp * loss_decomp + coeff_deconv_gate_l1 * gate_l1_loss
             (loss / accum_group_size).backward()
             if should_step:
                 nn.utils.clip_grad_norm_(
@@ -520,6 +527,7 @@ for epoch in range(start_epoch, num_epochs):
 
     avg_loss = epoch_loss / max(1, num_batches)
     print("\n[Epoch %d/%d] [avg_loss: %f]" % (epoch + 1, num_epochs, avg_loss))
+    print("[DEConv branch_weights] %s" % deconv_branch_weight_summary(DIDF_Encoder))
 
     # adjust the learning rate
 
