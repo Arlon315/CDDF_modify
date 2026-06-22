@@ -9,6 +9,7 @@ network definition, checkpoints, and test-data conventions.
 
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
@@ -87,7 +88,17 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         base_fusion=infer_cddfuse_base_fusion(checkpoint),
         decoder_block=infer_cddfuse_decoder_block(checkpoint),
     )
-    encoder = encoder.to(device)
+    has_vis_encoder = "VIS_Encoder" in checkpoint
+    has_ir_encoder = "IR_Encoder" in checkpoint
+    if has_vis_encoder != has_ir_encoder:
+        raise KeyError(
+            "Separate-encoder checkpoint must contain both VIS_Encoder and IR_Encoder."
+        )
+
+    has_separate_encoders = has_vis_encoder and has_ir_encoder
+    ir_encoder = copy.deepcopy(encoder) if has_separate_encoders else encoder
+    vis_encoder = encoder.to(device)
+    ir_encoder = ir_encoder.to(device)
     decoder = decoder.to(device)
     base_fuse = base_fuse.to(device)
     detail_fuse = detail_fuse.to(device)
@@ -98,14 +109,20 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
             share_mamba=infer_fmem_share_mamba(checkpoint),
         ).to(device)
 
-    encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
+    if has_separate_encoders:
+        vis_encoder.load_state_dict(_strip_module_prefix(checkpoint["VIS_Encoder"]))
+        ir_encoder.load_state_dict(_strip_module_prefix(checkpoint["IR_Encoder"]))
+    else:
+        shared_encoder_state = _strip_module_prefix(checkpoint["DIDF_Encoder"])
+        vis_encoder.load_state_dict(shared_encoder_state)
     decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
     base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
     detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))
     if fmem is not None:
         fmem.load_state_dict(_strip_module_prefix(checkpoint["FMEMLayer"]))
 
-    encoder.eval()
+    vis_encoder.eval()
+    ir_encoder.eval()
     decoder.eval()
     base_fuse.eval()
     detail_fuse.eval()
@@ -113,7 +130,8 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         fmem.eval()
 
     bundle = {
-        "encoder": encoder,
+        "vis_encoder": vis_encoder,
+        "ir_encoder": ir_encoder,
         "decoder": decoder,
         "base_fuse": base_fuse,
         "detail_fuse": detail_fuse,
@@ -295,8 +313,8 @@ def run_fusion_prediction(
     decoder_input = _build_decoder_input(decoder_input_mode, vis_tensor, ir_tensor)
 
     with torch.no_grad():
-        feature_v_b, feature_v_d, _ = bundle["encoder"](vis_tensor)
-        feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
+        feature_v_b, feature_v_d, _ = bundle["vis_encoder"](vis_tensor)
+        feature_i_b, feature_i_d, _ = bundle["ir_encoder"](ir_tensor)
         feature_f_b = fuse_base_features(bundle["base_fuse"], feature_i_b, feature_v_b)
         feature_f_d = fuse_detail_features(bundle["detail_fuse"], feature_i_d, feature_v_d)
         if bundle["fmem"] is not None:
