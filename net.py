@@ -1072,7 +1072,7 @@ class Restormer_Decoder(nn.Module):
             ffn_expansion_factor = 2.5 if block_type == 'htb' else 2
         self.reduce_channel = nn.Conv2d(int(dim*2), int(dim), kernel_size=1, bias=bias)
         self.encoder_level2 = nn.Sequential(*make_feature_blocks(
-            block_type, dim, num_blocks[1], heads[1], ffn_expansion_factor, bias, LayerNorm_type))
+            block_type, dim, num_blocks[0], heads[1], ffn_expansion_factor, bias, LayerNorm_type))
         self.output = nn.Sequential(
             nn.Conv2d(int(dim), int(dim)//2, kernel_size=3,
                       stride=1, padding=1, bias=bias),
