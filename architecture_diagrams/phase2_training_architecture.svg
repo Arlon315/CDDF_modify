@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960">
+  <title>CDDFuse 第二阶段训练架构</title>
+  <desc>根据 train.py 默认配置绘制的可编辑 SVG：双模态编码、WindowMCAM/CGA 融合、FMEM、HTB 解码与第二阶段损失。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#425466"/>
+    </marker>
+    <marker id="arrow-loss" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#c97a10"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #172b3a; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 15px; fill: #526473; }
+      .lane-title { font-size: 17px; font-weight: 700; }
+      .node-title { font-size: 15px; font-weight: 700; text-anchor: middle; }
+      .node-text { font-size: 12px; text-anchor: middle; fill: #334e5c; }
+      .tiny { font-size: 11px; fill: #526473; }
+      .label { font-size: 12px; font-weight: 600; fill: #334e5c; }
+      .node { fill: #e9f7f5; stroke: #16877c; stroke-width: 2; rx: 10; }
+      .input { fill: #eef4ff; stroke: #5277b8; stroke-width: 2; rx: 10; }
+      .feature-base { fill: #f0edff; stroke: #7259b7; stroke-width: 2; rx: 9; }
+      .feature-detail { fill: #fff0f4; stroke: #bd5c7a; stroke-width: 2; rx: 9; }
+      .fusion-base { fill: #eee9ff; stroke: #674db2; stroke-width: 2.4; rx: 12; }
+      .fusion-detail { fill: #ffeaf1; stroke: #b44e72; stroke-width: 2.4; rx: 12; }
+      .output { fill: #eaf7ff; stroke: #2787b7; stroke-width: 2; rx: 10; }
+      .loss { fill: #fff6e7; stroke: #d48a22; stroke-width: 2; rx: 12; }
+      .shared { fill: #f8fbfc; stroke: #7b8e9a; stroke-width: 2; stroke-dasharray: 8 6; rx: 16; }
+      .arrow { fill: none; stroke: #425466; stroke-width: 2; marker-end: url(#arrow); }
+      .arrow-base { fill: none; stroke: #7259b7; stroke-width: 2; marker-end: url(#arrow); }
+      .arrow-detail { fill: none; stroke: #bd5c7a; stroke-width: 2; marker-end: url(#arrow); }
+      .arrow-loss { fill: none; stroke: #c97a10; stroke-width: 1.8; marker-end: url(#arrow-loss); }
+      .residual { fill: none; stroke: #5277b8; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+      .node-text[text-anchor="start"] { text-anchor: start; }
+    </style>
+  </defs>
+
+  <g id="header">
+    <text x="40" y="48" class="title">第二阶段训练：双模态特征融合</text>
+    <text x="40" y="78" class="subtitle">Epoch 30–119 · 默认融合：base_fusion=windowMCAM，detail_fusion=cga · 编码器、解码器及全部融合模块均继续训练</text>
+  </g>
+
+  <g id="inputs">
+    <rect x="32" y="194" width="142" height="68" class="input"/>
+    <text x="103" y="221" class="node-title">可见光图像 V</text>
+    <text x="103" y="244" class="node-text">B×1×H×W</text>
+    <rect x="32" y="494" width="142" height="68" class="input"/>
+    <text x="103" y="521" class="node-title">红外图像 I</text>
+    <text x="103" y="544" class="node-text">B×1×H×W</text>
+  </g>
+
+  <g id="shared-encoder">
+    <rect x="215" y="116" width="475" height="550" class="shared"/>
+    <text x="237" y="145" class="lane-title">共享权重的 DIDF Encoder（继续训练）</text>
+
+    <g id="visible-encoder-lane">
+      <text x="237" y="179" class="label">可见光编码</text>
+      <rect x="237" y="194" width="105" height="68" class="node"/>
+      <text x="289.5" y="220" class="node-title">Patch Embed</text>
+      <text x="289.5" y="242" class="node-text">3×3 Conv, 1→64</text>
+      <rect x="370" y="194" width="118" height="68" class="node"/>
+      <text x="429" y="220" class="node-title">Restormer</text>
+      <text x="429" y="242" class="node-text">Transformer ×4</text>
+      <circle cx="518" cy="228" r="7" fill="#425466"/>
+      <rect x="550" y="171" width="118" height="68" class="feature-base"/>
+      <text x="609" y="196" class="node-title">V_B</text>
+      <text x="609" y="217" class="node-text">SpatialMamba ×1</text>
+      <rect x="550" y="269" width="118" height="80" class="feature-detail"/>
+      <text x="609" y="294" class="node-title">V_D</text>
+      <text x="609" y="315" class="node-text">INN ×1</text>
+      <text x="609" y="334" class="node-text">DEConv ×2</text>
+      <path d="M174 228 H237" class="arrow"/>
+      <path d="M342 228 H370" class="arrow"/>
+      <path d="M488 228 H511" class="arrow"/>
+      <path d="M525 228 H538 V205 H550" class="arrow-base"/>
+      <path d="M525 228 H538 V309 H550" class="arrow-detail"/>
+    </g>
+
+    <g id="infrared-encoder-lane">
+      <text x="237" y="479" class="label">红外编码（与上方共享同一组参数）</text>
+      <rect x="237" y="494" width="105" height="68" class="node"/>
+      <text x="289.5" y="520" class="node-title">Patch Embed</text>
+      <text x="289.5" y="542" class="node-text">3×3 Conv, 1→64</text>
+      <rect x="370" y="494" width="118" height="68" class="node"/>
+      <text x="429" y="520" class="node-title">Restormer</text>
+      <text x="429" y="542" class="node-text">Transformer ×4</text>
+      <circle cx="518" cy="528" r="7" fill="#425466"/>
+      <rect x="550" y="471" width="118" height="68" class="feature-base"/>
+      <text x="609" y="496" class="node-title">I_B</text>
+      <text x="609" y="517" class="node-text">SpatialMamba ×1</text>
+      <rect x="550" y="569" width="118" height="80" class="feature-detail"/>
+      <text x="609" y="594" class="node-title">I_D</text>
+      <text x="609" y="615" class="node-text">INN ×1</text>
+      <text x="609" y="634" class="node-text">DEConv ×2</text>
+      <path d="M174 528 H237" class="arrow"/>
+      <path d="M342 528 H370" class="arrow"/>
+      <path d="M488 528 H511" class="arrow"/>
+      <path d="M525 528 H538 V505 H550" class="arrow-base"/>
+      <path d="M525 528 H538 V609 H550" class="arrow-detail"/>
+    </g>
+  </g>
+
+  <g id="base-fusion">
+    <rect x="760" y="165" width="250" height="170" class="fusion-base"/>
+    <text x="885" y="193" class="node-title">BaseFuseLayer：WindowMCAM</text>
+    <text x="885" y="220" class="node-text">8×8 Window MCAM</text>
+    <text x="885" y="241" class="node-text">+ Shifted Window MCAM（shift=4）</text>
+    <text x="885" y="264" class="node-text">IR/VIS 公共注意力 → 交互乘积</text>
+    <text x="885" y="285" class="node-text">DWConv + GELU + 1×1 Conv</text>
+    <text x="885" y="310" class="label" text-anchor="middle">I_B + V_B 残差 → F_B</text>
+    <path d="M668 205 H720 V222 H760" class="arrow-base"/>
+    <path d="M668 505 H720 V278 H760" class="arrow-base"/>
+  </g>
+
+  <g id="detail-fusion">
+    <rect x="760" y="455" width="250" height="170" class="fusion-detail"/>
+    <text x="885" y="483" class="node-title">DetailFuseLayer：CGA</text>
+    <text x="885" y="510" class="node-text">I_D + V_D → Spatial Attention</text>
+    <text x="885" y="531" class="node-text">+ Channel Attention → Pixel Gate</text>
+    <text x="885" y="554" class="node-text">门控加权 I_D / V_D</text>
+    <text x="885" y="575" class="node-text">+ 初始和 → 1×1 Conv</text>
+    <text x="885" y="600" class="label" text-anchor="middle">输出 F_D</text>
+    <path d="M668 309 H735 V505 H760" class="arrow-detail"/>
+    <path d="M668 609 H735 V575 H760" class="arrow-detail"/>
+  </g>
+
+  <g id="fmem">
+    <rect x="1064" y="315" width="210" height="168" class="node"/>
+    <text x="1169" y="344" class="node-title">FMEM（继续训练）</text>
+    <text x="1169" y="371" class="node-text">F_D / F_B 归一化与局部上下文</text>
+    <text x="1169" y="393" class="node-text">D⊙B + D + B</text>
+    <text x="1169" y="415" class="node-text">4方向 Spatial Mamba 门控</text>
+    <text x="1169" y="437" class="node-text">特征增强 + ECA + 残差</text>
+    <text x="1169" y="464" class="label" text-anchor="middle">输出融合增强特征 F_E</text>
+    <path d="M1010 250 H1038 V365 H1064" class="arrow-base"/>
+    <path d="M1010 540 H1038 V435 H1064" class="arrow-detail"/>
+  </g>
+
+  <g id="decoder">
+    <rect x="1315" y="315" width="170" height="168" class="node"/>
+    <text x="1400" y="344" class="node-title">DIDF Decoder</text>
+    <text x="1400" y="371" class="node-text">HTB ×2</text>
+    <text x="1400" y="393" class="node-text">Conv 64→32</text>
+    <text x="1400" y="415" class="node-text">LeakyReLU</text>
+    <text x="1400" y="437" class="node-text">Conv 32→1 + V</text>
+    <text x="1400" y="459" class="node-text">Sigmoid</text>
+    <path d="M1274 399 H1315" class="arrow"/>
+  </g>
+
+  <g id="visible-residual">
+    <path d="M103 194 V103 H1400 V315" class="residual"/>
+    <text x="1040" y="96" class="label">可见光残差输入（代码：DIDF_Decoder(data_VIS, ...)）</text>
+  </g>
+
+  <g id="fused-output">
+    <rect x="1508" y="363" width="76" height="72" class="output"/>
+    <text x="1546" y="390" class="node-title">融合图</text>
+    <text x="1546" y="413" class="node-text">F</text>
+    <path d="M1485 399 H1508" class="arrow"/>
+  </g>
+
+  <g id="phase2-loss">
+    <rect x="370" y="728" width="900" height="180" class="loss"/>
+    <text x="395" y="760" class="lane-title">第二阶段训练目标</text>
+    <text x="395" y="791" class="label">L = Lfusion(V,I,F) + 2·Ldecomp + 0.08·LPixelBSCL(V,I,F)</text>
+    <text x="395" y="821" class="node-text" text-anchor="start">Ldecomp = cc(V_D,I_D)² / [1.01 + cc(V_B,I_B)]</text>
+    <text x="395" y="849" class="node-text" text-anchor="start">代码还计算 V/F 与 I/F 的 SSIM+MSE，但未加入最终 loss。</text>
+    <text x="395" y="879" class="tiny">阶段切换后没有冻结操作：所有五个优化器均执行 step()。</text>
+    <text x="920" y="791" class="label">反向传播更新</text>
+    <text x="920" y="819" class="node-text" text-anchor="start">✓ Encoder　✓ Decoder　✓ BaseFuse</text>
+    <text x="920" y="847" class="node-text" text-anchor="start">✓ DetailFuse　✓ FMEM</text>
+    <path d="M1546 435 V690 H1110 V728" class="arrow-loss"/>
+    <path d="M609 349 V694 H680 V728" class="arrow-loss"/>
+    <path d="M609 649 V684 H740 V728" class="arrow-loss"/>
+  </g>
+
+  <g id="legend">
+    <rect x="1305" y="746" width="20" height="14" class="node"/>
+    <text x="1335" y="758" class="tiny">参与训练的通用模块</text>
+    <rect x="1305" y="776" width="20" height="14" class="fusion-base"/>
+    <text x="1335" y="788" class="tiny">基础特征与基础融合</text>
+    <rect x="1305" y="806" width="20" height="14" class="fusion-detail"/>
+    <text x="1335" y="818" class="tiny">细节特征与细节融合</text>
+    <line x1="1305" y1="847" x2="1330" y2="847" class="residual"/>
+    <text x="1340" y="851" class="tiny">输入残差</text>
+    <rect x="1305" y="870" width="20" height="14" class="loss"/>
+    <text x="1335" y="882" class="tiny">损失与监督</text>
+  </g>
+</svg>

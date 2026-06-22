@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <title>CDDFuse 第一阶段训练架构</title>
+  <desc>根据 train.py 默认配置绘制的可编辑 SVG：共享编码器、FMEM、共享解码器以及第一阶段损失。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#425466"/>
+    </marker>
+    <marker id="arrow-loss" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#c97a10"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #172b3a; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 15px; fill: #526473; }
+      .lane-title { font-size: 17px; font-weight: 700; }
+      .node-title { font-size: 15px; font-weight: 700; text-anchor: middle; }
+      .node-text { font-size: 12px; text-anchor: middle; fill: #334e5c; }
+      .tiny { font-size: 11px; fill: #526473; }
+      .label { font-size: 12px; font-weight: 600; fill: #334e5c; }
+      .node { fill: #e9f7f5; stroke: #16877c; stroke-width: 2; rx: 10; }
+      .input { fill: #eef4ff; stroke: #5277b8; stroke-width: 2; rx: 10; }
+      .feature-base { fill: #f0edff; stroke: #7259b7; stroke-width: 2; rx: 9; }
+      .feature-detail { fill: #fff0f4; stroke: #bd5c7a; stroke-width: 2; rx: 9; }
+      .output { fill: #eaf7ff; stroke: #2787b7; stroke-width: 2; rx: 10; }
+      .loss { fill: #fff6e7; stroke: #d48a22; stroke-width: 2; rx: 12; }
+      .shared { fill: #f8fbfc; stroke: #7b8e9a; stroke-width: 2; stroke-dasharray: 8 6; rx: 16; }
+      .arrow { fill: none; stroke: #425466; stroke-width: 2; marker-end: url(#arrow); }
+      .arrow-thin { fill: none; stroke: #718491; stroke-width: 1.6; marker-end: url(#arrow); }
+      .arrow-loss { fill: none; stroke: #c97a10; stroke-width: 1.8; marker-end: url(#arrow-loss); }
+      .residual { fill: none; stroke: #5277b8; stroke-width: 1.8; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+      .node-text[text-anchor="start"] { text-anchor: start; }
+    </style>
+  </defs>
+
+  <g id="header">
+    <text x="40" y="48" class="title">第一阶段训练：模态重建与特征分解预训练</text>
+    <text x="40" y="78" class="subtitle">Epoch 0–29 · 默认参数：backbone=restormer，encoder_base_feature=spatial_mamba，decoder_block=htb · 所有特征均为 64×H×W</text>
+  </g>
+
+  <g id="shared-encoder">
+    <rect x="225" y="112" width="515" height="590" class="shared"/>
+    <text x="245" y="140" class="lane-title">共享权重的 DIDF Encoder（训练）</text>
+
+    <g id="visible-encoder-lane">
+      <text x="245" y="174" class="label">可见光分支</text>
+      <rect x="245" y="190" width="105" height="64" class="node"/>
+      <text x="297.5" y="215" class="node-title">Patch Embed</text>
+      <text x="297.5" y="237" class="node-text">3×3 Conv, 1→64</text>
+
+      <rect x="382" y="190" width="118" height="64" class="node"/>
+      <text x="441" y="215" class="node-title">Restormer</text>
+      <text x="441" y="237" class="node-text">Transformer ×4</text>
+
+      <circle cx="532" cy="222" r="7" fill="#425466"/>
+      <rect x="562" y="163" width="152" height="70" class="feature-base"/>
+      <text x="638" y="187" class="node-title">基础特征 V_B</text>
+      <text x="638" y="208" class="node-text">SpatialMambaBase</text>
+      <text x="638" y="224" class="tiny" text-anchor="middle">4方向 Mamba ×1</text>
+
+      <rect x="562" y="257" width="152" height="82" class="feature-detail"/>
+      <text x="638" y="280" class="node-title">细节特征 V_D</text>
+      <text x="638" y="301" class="node-text">INN DetailNode ×1</text>
+      <text x="638" y="321" class="node-text">DEConv ×2</text>
+
+      <path d="M350 222 H382" class="arrow"/>
+      <path d="M500 222 H525" class="arrow"/>
+      <path d="M539 222 H550 V198 H562" class="arrow-thin"/>
+      <path d="M539 222 H550 V298 H562" class="arrow-thin"/>
+    </g>
+
+    <g id="infrared-encoder-lane">
+      <text x="245" y="455" class="label">红外分支（与上方分支共享同一组参数）</text>
+      <rect x="245" y="472" width="105" height="64" class="node"/>
+      <text x="297.5" y="497" class="node-title">Patch Embed</text>
+      <text x="297.5" y="519" class="node-text">3×3 Conv, 1→64</text>
+
+      <rect x="382" y="472" width="118" height="64" class="node"/>
+      <text x="441" y="497" class="node-title">Restormer</text>
+      <text x="441" y="519" class="node-text">Transformer ×4</text>
+
+      <circle cx="532" cy="504" r="7" fill="#425466"/>
+      <rect x="562" y="445" width="152" height="70" class="feature-base"/>
+      <text x="638" y="469" class="node-title">基础特征 I_B</text>
+      <text x="638" y="490" class="node-text">SpatialMambaBase</text>
+      <text x="638" y="506" class="tiny" text-anchor="middle">4方向 Mamba ×1</text>
+
+      <rect x="562" y="539" width="152" height="82" class="feature-detail"/>
+      <text x="638" y="562" class="node-title">细节特征 I_D</text>
+      <text x="638" y="583" class="node-text">INN DetailNode ×1</text>
+      <text x="638" y="603" class="node-text">DEConv ×2</text>
+
+      <path d="M350 504 H382" class="arrow"/>
+      <path d="M500 504 H525" class="arrow"/>
+      <path d="M539 504 H550 V480 H562" class="arrow-thin"/>
+      <path d="M539 504 H550 V580 H562" class="arrow-thin"/>
+    </g>
+  </g>
+
+  <g id="inputs">
+    <rect x="38" y="190" width="150" height="64" class="input"/>
+    <text x="113" y="216" class="node-title">可见光图像 V</text>
+    <text x="113" y="238" class="node-text">B×1×H×W</text>
+    <path d="M188 222 H245" class="arrow"/>
+
+    <rect x="38" y="472" width="150" height="64" class="input"/>
+    <text x="113" y="498" class="node-title">红外图像 I</text>
+    <text x="113" y="520" class="node-text">B×1×H×W</text>
+    <path d="M188 504 H245" class="arrow"/>
+  </g>
+
+  <g id="visible-fmem">
+    <rect x="785" y="178" width="205" height="116" class="node"/>
+    <text x="887.5" y="201" class="node-title">共享 FMEM（训练）</text>
+    <text x="887.5" y="222" class="node-text">D/B 局部上下文 → 混合</text>
+    <text x="887.5" y="241" class="node-text">4方向 Spatial Mamba 门控</text>
+    <text x="887.5" y="260" class="node-text">ECA + 多重残差</text>
+    <text x="887.5" y="281" class="label" text-anchor="middle">输出 V_E</text>
+    <path d="M714 198 H750 V220 H785" class="arrow"/>
+    <path d="M714 298 H750 V252 H785" class="arrow"/>
+  </g>
+
+  <g id="infrared-fmem">
+    <rect x="785" y="460" width="205" height="116" class="node"/>
+    <text x="887.5" y="483" class="node-title">共享 FMEM（训练）</text>
+    <text x="887.5" y="504" class="node-text">D/B 局部上下文 → 混合</text>
+    <text x="887.5" y="523" class="node-text">4方向 Spatial Mamba 门控</text>
+    <text x="887.5" y="542" class="node-text">ECA + 多重残差</text>
+    <text x="887.5" y="563" class="label" text-anchor="middle">输出 I_E</text>
+    <path d="M714 480 H750 V502 H785" class="arrow"/>
+    <path d="M714 580 H750 V534 H785" class="arrow"/>
+  </g>
+
+  <g id="shared-decoder">
+    <rect x="1034" y="112" width="392" height="590" class="shared"/>
+    <text x="1054" y="140" class="lane-title">共享权重的 DIDF Decoder（训练）</text>
+
+    <g id="visible-decoder-lane">
+      <rect x="1054" y="190" width="145" height="92" class="node"/>
+      <text x="1126.5" y="215" class="node-title">HTB Decoder</text>
+      <text x="1126.5" y="237" class="node-text">Histogram Transformer ×2</text>
+      <text x="1126.5" y="259" class="node-text">64×H×W</text>
+      <rect x="1240" y="190" width="164" height="92" class="node"/>
+      <text x="1322" y="212" class="node-title">重建头 + 残差</text>
+      <text x="1322" y="233" class="node-text">Conv 64→32 + LeakyReLU</text>
+      <text x="1322" y="252" class="node-text">Conv 32→1 + V</text>
+      <text x="1322" y="271" class="node-text">Sigmoid</text>
+      <path d="M990 236 H1054" class="arrow"/>
+      <path d="M1199 236 H1240" class="arrow"/>
+    </g>
+
+    <g id="infrared-decoder-lane">
+      <rect x="1054" y="472" width="145" height="92" class="node"/>
+      <text x="1126.5" y="497" class="node-title">HTB Decoder</text>
+      <text x="1126.5" y="519" class="node-text">Histogram Transformer ×2</text>
+      <text x="1126.5" y="541" class="node-text">64×H×W</text>
+      <rect x="1240" y="472" width="164" height="92" class="node"/>
+      <text x="1322" y="494" class="node-title">重建头 + 残差</text>
+      <text x="1322" y="515" class="node-text">Conv 64→32 + LeakyReLU</text>
+      <text x="1322" y="534" class="node-text">Conv 32→1 + I</text>
+      <text x="1322" y="553" class="node-text">Sigmoid</text>
+      <path d="M990 518 H1054" class="arrow"/>
+      <path d="M1199 518 H1240" class="arrow"/>
+    </g>
+  </g>
+
+  <g id="residual-links">
+    <path d="M113 254 V365 H1322 V282" class="residual"/>
+    <text x="670" y="357" class="tiny">可见光输入残差</text>
+    <path d="M113 536 V674 H1322 V564" class="residual"/>
+    <text x="670" y="666" class="tiny">红外输入残差</text>
+  </g>
+
+  <g id="outputs">
+    <rect x="1460" y="200" width="112" height="72" class="output"/>
+    <text x="1516" y="227" class="node-title">重建 V̂</text>
+    <text x="1516" y="249" class="node-text">B×1×H×W</text>
+    <path d="M1404 236 H1460" class="arrow"/>
+
+    <rect x="1460" y="482" width="112" height="72" class="output"/>
+    <text x="1516" y="509" class="node-title">重建 Î</text>
+    <text x="1516" y="531" class="node-text">B×1×H×W</text>
+    <path d="M1404 518 H1460" class="arrow"/>
+  </g>
+
+  <g id="phase1-loss">
+    <rect x="350" y="760" width="900" height="174" class="loss"/>
+    <text x="375" y="790" class="lane-title">第一阶段训练目标</text>
+    <text x="375" y="820" class="label">L = Lrec(V,V̂) + Lrec(I,Î) + 2·Ldecomp + 5·Lgrad</text>
+    <text x="375" y="848" class="node-text" text-anchor="start">Lrec(X,X̂) = 5·SSIM(X,X̂) + MSE(X,X̂)</text>
+    <text x="375" y="874" class="node-text" text-anchor="start">Ldecomp = cc(V_D,I_D)² / [1.01 + cc(V_B,I_B)]</text>
+    <text x="375" y="900" class="node-text" text-anchor="start">Lgrad = L1(∇V, ∇V̂)（当前代码只对可见光重建计算梯度损失）</text>
+    <text x="925" y="820" class="label">反向传播更新</text>
+    <text x="925" y="848" class="node-text" text-anchor="start">✓ DIDF Encoder</text>
+    <text x="925" y="874" class="node-text" text-anchor="start">✓ DIDF Decoder</text>
+    <text x="925" y="900" class="node-text" text-anchor="start">✓ FMEM</text>
+    <path d="M1516 272 V732 H1080 V760" class="arrow-loss"/>
+    <path d="M1516 554 V720 H1020 V760" class="arrow-loss"/>
+    <path d="M638 339 V730 H670 V760" class="arrow-loss"/>
+    <path d="M638 621 V720 H730 V760" class="arrow-loss"/>
+  </g>
+
+  <g id="legend">
+    <rect x="1285" y="785" width="20" height="14" class="node"/>
+    <text x="1315" y="797" class="tiny">本阶段参与训练的网络模块</text>
+    <rect x="1285" y="815" width="20" height="14" class="feature-base"/>
+    <text x="1315" y="827" class="tiny">基础特征</text>
+    <rect x="1285" y="845" width="20" height="14" class="feature-detail"/>
+    <text x="1315" y="857" class="tiny">细节特征</text>
+    <rect x="1285" y="875" width="20" height="14" class="loss"/>
+    <text x="1315" y="887" class="tiny">损失与监督</text>
+  </g>
+</svg>
