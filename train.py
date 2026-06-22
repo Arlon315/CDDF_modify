@@ -21,6 +21,7 @@ from net import (
 from FMEM import FusionMambaEnhanceModule
 from utils.dataset import H5Dataset
 import argparse
+import copy
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  
 import sys
@@ -93,7 +94,7 @@ decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
 encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
 base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
-model_str = f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_FMEM"
+model_str = f"{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_FMEM_SeparateEncoder"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -124,7 +125,9 @@ encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cdd
     base_fusion=args.base_fusion,
     decoder_block=decoder_block,
 )
-DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
+ir_encoder_module = copy.deepcopy(encoder_module)
+VIS_Encoder = nn.DataParallel(encoder_module).to(device)
+IR_Encoder = nn.DataParallel(ir_encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
 DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
@@ -134,7 +137,10 @@ FMEMLayer = nn.DataParallel(
 
 # optimizer, scheduler and loss function
 optimizer1 = torch.optim.Adam(
-    DIDF_Encoder.parameters(), lr=lr, weight_decay=weight_decay)
+    list(VIS_Encoder.parameters()) + list(IR_Encoder.parameters()),
+    lr=lr,
+    weight_decay=weight_decay,
+)
 optimizer2 = torch.optim.Adam(
     DIDF_Decoder.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer3 = torch.optim.Adam(
@@ -187,7 +193,9 @@ def build_checkpoint(epoch):
         'encoder_detail_enhance_layers': 2,
         'decoder_freq_enhance': 'dynamic_filter',
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
-        'DIDF_Encoder': DIDF_Encoder.state_dict(),
+        'separate_encoders': True,
+        'VIS_Encoder': VIS_Encoder.state_dict(),
+        'IR_Encoder': IR_Encoder.state_dict(),
         'DIDF_Decoder': DIDF_Decoder.state_dict(),
         'BaseFuseLayer': BaseFuseLayer.state_dict(),
         'DetailFuseLayer': DetailFuseLayer.state_dict(),
@@ -295,6 +303,22 @@ def load_scheduler_if_present(scheduler, checkpoint, key):
         print(f"Skipped {key}: incompatible scheduler state ({exc}).")
         return False
 
+def load_encoder_states(checkpoint):
+    if 'VIS_Encoder' in checkpoint and 'IR_Encoder' in checkpoint:
+        load_state_if_present(VIS_Encoder, checkpoint, 'VIS_Encoder', strict=False)
+        load_state_if_present(IR_Encoder, checkpoint, 'IR_Encoder', strict=False)
+        return
+
+    if 'DIDF_Encoder' in checkpoint:
+        load_state_if_present(VIS_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
+        load_state_if_present(IR_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
+        print('Initialized VIS_Encoder and IR_Encoder from shared DIDF_Encoder weights.')
+        return
+
+    raise KeyError(
+        'Checkpoint must contain VIS_Encoder and IR_Encoder, or legacy DIDF_Encoder weights.'
+    )
+
 
 if args.resume:
     resume_path = os.path.expanduser(args.resume)
@@ -342,7 +366,7 @@ if args.resume:
                 f"but current --base_fusion is '{args.base_fusion}'."
             )
 
-    load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
+    load_encoder_states(checkpoint)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
     load_state_if_present(FMEMLayer, checkpoint, 'FMEMLayer', required=False)
 
@@ -365,9 +389,9 @@ if args.resume:
     else:
         skipped_resume_parts = []
         if not encoder_base_feature_matches:
-            skipped_resume_parts.append('DIDF_Encoder baseFeature weights/optimizer1/scheduler1')
+            skipped_resume_parts.append('VIS_Encoder/IR_Encoder baseFeature weights/optimizer1/scheduler1')
             print(
-                f"Partially loaded DIDF_Encoder: checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
+                f"Partially loaded VIS_Encoder and IR_Encoder: checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
                 f"current encoder_base_feature='{encoder_base_feature}'."
             )
         if not decoder_block_matches:
@@ -434,13 +458,15 @@ for epoch in range(start_epoch, num_epochs):
     epoch_loss = 0.0
     for i, (data_VIS, data_IR) in enumerate(loader['train']):
         data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
-        DIDF_Encoder.train()
+        VIS_Encoder.train()
+        IR_Encoder.train()
         DIDF_Decoder.train()
         BaseFuseLayer.train()
         DetailFuseLayer.train()
         FMEMLayer.train()
 
-        DIDF_Encoder.zero_grad()
+        VIS_Encoder.zero_grad()
+        IR_Encoder.zero_grad()
         DIDF_Decoder.zero_grad()
         BaseFuseLayer.zero_grad()
         DetailFuseLayer.zero_grad()
@@ -453,8 +479,8 @@ for epoch in range(start_epoch, num_epochs):
         optimizer5.zero_grad()
 
         if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _ = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, _ = DIDF_Encoder(data_IR)
+            feature_V_B, feature_V_D, _ = VIS_Encoder(data_VIS)
+            feature_I_B, feature_I_D, _ = IR_Encoder(data_IR)
             feature_V_E = FMEMLayer(feature_V_D, feature_V_B)
             feature_I_E = FMEMLayer(feature_I_D, feature_I_B)
             data_VIS_hat, _ = DIDF_Decoder(data_VIS, fused_feature=feature_V_E)
@@ -475,7 +501,9 @@ for epoch in range(start_epoch, num_epochs):
 
             loss.backward()
             nn.utils.clip_grad_norm_(
-                DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+                VIS_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                IR_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
@@ -484,8 +512,8 @@ for epoch in range(start_epoch, num_epochs):
             optimizer2.step()
             optimizer5.step()
         else:  #Phase II
-            feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
+            feature_V_B, feature_V_D, feature_V = VIS_Encoder(data_VIS)
+            feature_I_B, feature_I_D, feature_I = IR_Encoder(data_IR)
             feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
             feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
             feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
@@ -504,7 +532,9 @@ for epoch in range(start_epoch, num_epochs):
             loss = fusionloss + coeff_decomp * loss_decomp + coeff_pixel_bscl * pixel_bscl_loss
             loss.backward()
             nn.utils.clip_grad_norm_(
-                DIDF_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+                VIS_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            nn.utils.clip_grad_norm_(
+                IR_Encoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
