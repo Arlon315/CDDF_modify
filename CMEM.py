@@ -287,7 +287,6 @@ class CrossMambaEnhanceModule(nn.Module):
         self.base_norm = LayerNorm(dim, 'WithBias')
         self.cross_mixer = CrossSpatialMamba4Path(dim=dim, share_mamba=share_mamba)
         self.merge = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
-        self.alpha = nn.Parameter(torch.zeros(1))
 
     def forward(self, detail_feature, base_feature):
         cross = self.cross_mixer(
@@ -295,4 +294,4 @@ class CrossMambaEnhanceModule(nn.Module):
             self.base_norm(base_feature),
         )
         cross = self.merge(cross)
-        return detail_feature + base_feature + torch.tanh(self.alpha) * cross
+        return detail_feature + base_feature + cross
