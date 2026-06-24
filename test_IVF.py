@@ -10,7 +10,7 @@ from net import (
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
-from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba
+from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
 import argparse
 import os
 import numpy as np
@@ -131,6 +131,8 @@ def main():
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(args.ckpt_path, map_location=device)
         use_fmem = 'FMEMLayer' in checkpoint
+        if use_fmem and not is_cmem_checkpoint(checkpoint):
+            raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
         encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
@@ -147,9 +149,9 @@ def main():
         FMEMLayer = None
         if use_fmem:
             FMEMLayer = nn.DataParallel(
-                FusionMambaEnhanceModule(
+                CrossMambaEnhanceModule(
                     dim=64,
-                    share_mamba=infer_fmem_share_mamba(checkpoint),
+                    share_mamba=infer_cmem_share_mamba(checkpoint),
                 )
             ).to(device)
 

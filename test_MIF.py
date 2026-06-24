@@ -9,7 +9,7 @@ from net import (
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
-from FMEM import FusionMambaEnhanceModule, infer_fmem_share_mamba
+from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
 import os
 import numpy as np
 from utils.Evaluator import Evaluator
@@ -37,6 +37,8 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(ckpt_path, map_location=device)
         use_fmem = 'FMEMLayer' in checkpoint
+        if use_fmem and not is_cmem_checkpoint(checkpoint):
+            raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
         encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
@@ -52,9 +54,9 @@ for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]:
         FMEMLayer = None
         if use_fmem:
             FMEMLayer = nn.DataParallel(
-                FusionMambaEnhanceModule(
+                CrossMambaEnhanceModule(
                     dim=64,
-                    share_mamba=infer_fmem_share_mamba(checkpoint),
+                    share_mamba=infer_cmem_share_mamba(checkpoint),
                 )
             ).to(device)
 
