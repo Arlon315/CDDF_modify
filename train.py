@@ -76,9 +76,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--detail_fusion",
-    choices=("cga", "dff", "inn"),
+    choices=("cga", "dff", "inn", "cmem_detail"),
     default="cga",
-    help="Use CGAFusion, DFF-style fusion, or the original INN DetailFeatureExtraction fusion.",
+    help="Use CGAFusion, CMEM_detail fusion, DFF-style fusion, or the original INN DetailFeatureExtraction fusion.",
 )
 parser.add_argument(
     "--base_fusion",

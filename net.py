@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+from CMEM_detail import CMEMDetailFusion
 from SpatialMamba import SpatialMambaBaseFeature
 
 
@@ -1114,6 +1115,8 @@ def _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers=1):
     detail_fusion = str(detail_fusion or 'cga').lower()
     if detail_fusion == 'cga':
         return CGAFusion(dim=64)
+    if detail_fusion == 'cmem_detail':
+        return CMEMDetailFusion(dim=64, share_mamba=False)
     if detail_fusion in ('inn', 'detail', 'detail_feature'):
         return DetailFeatureExtraction(num_layers=int(detail_fusion_num_layers or 1))
     raise ValueError(f"Unsupported detail_fusion: {detail_fusion}")
@@ -1240,6 +1243,8 @@ def infer_cddfuse_detail_fusion(checkpoint):
         for key in detail_state.keys()
     ]
 
+    if any(str(key).startswith(('cross_mixer.', 'ir_norm.', 'vi_norm.', 'detail_norm.', 'base_norm.')) for key in keys):
+        return 'cmem_detail'
     if any(str(key).startswith(('sa.', 'ca.', 'pa.', 'conv.')) for key in keys):
         return 'cga'
     if any(str(key).startswith('net.') or 'theta_' in str(key) for key in keys):
