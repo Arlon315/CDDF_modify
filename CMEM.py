@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
 from SpatialMamba import LayerNorm
 
@@ -213,9 +214,10 @@ class CrossMambaSeqBlock(nn.Module):
 
 
 class CrossSpatialMamba4Path(nn.Module):
-    def __init__(self, dim=64, share_mamba=False):
+    def __init__(self, dim=64, share_mamba=False, use_checkpoint=True):
         super(CrossSpatialMamba4Path, self).__init__()
         self.share_mamba = share_mamba
+        self.use_checkpoint = use_checkpoint
         if share_mamba:
             self.block = CrossMambaSeqBlock(dim=dim)
         else:
@@ -232,6 +234,13 @@ class CrossSpatialMamba4Path(nn.Module):
 
     def _v_seq_to_img(self, seq, batch, channels, height, width):
         return seq.reshape(batch, width, height, channels).permute(0, 3, 2, 1).contiguous()
+
+    def _run_block(self, block, detail_seq, base_seq):
+        if self.use_checkpoint and self.training and (
+            detail_seq.requires_grad or base_seq.requires_grad
+        ):
+            return checkpoint_fn(block, detail_seq, base_seq)
+        return block(detail_seq, base_seq)
 
     def forward(self, detail_feature, base_feature):
         if detail_feature.shape != base_feature.shape:
@@ -260,13 +269,13 @@ class CrossSpatialMamba4Path(nn.Module):
                 [detail_h_fwd, detail_h_rev, detail_v_fwd, detail_v_rev], dim=0)
             base_seq = torch.cat(
                 [base_h_fwd, base_h_rev, base_v_fwd, base_v_rev], dim=0)
-            out_seq = self.block(detail_seq, base_seq)
+            out_seq = self._run_block(self.block, detail_seq, base_seq)
             h_fwd, h_rev, v_fwd, v_rev = torch.chunk(out_seq, 4, dim=0)
         else:
-            h_fwd = self.blocks[0](detail_h_fwd, base_h_fwd)
-            h_rev = self.blocks[1](detail_h_rev, base_h_rev)
-            v_fwd = self.blocks[2](detail_v_fwd, base_v_fwd)
-            v_rev = self.blocks[3](detail_v_rev, base_v_rev)
+            h_fwd = self._run_block(self.blocks[0], detail_h_fwd, base_h_fwd)
+            h_rev = self._run_block(self.blocks[1], detail_h_rev, base_h_rev)
+            v_fwd = self._run_block(self.blocks[2], detail_v_fwd, base_v_fwd)
+            v_rev = self._run_block(self.blocks[3], detail_v_rev, base_v_rev)
 
         h_rev = torch.flip(h_rev, dims=[1])
         v_rev = torch.flip(v_rev, dims=[1])
@@ -281,11 +290,15 @@ class CrossSpatialMamba4Path(nn.Module):
 
 
 class CrossMambaEnhanceModule(nn.Module):
-    def __init__(self, dim=64, share_mamba=False):
+    def __init__(self, dim=64, share_mamba=False, use_checkpoint=True):
         super(CrossMambaEnhanceModule, self).__init__()
         self.detail_norm = LayerNorm(dim, 'WithBias')
         self.base_norm = LayerNorm(dim, 'WithBias')
-        self.cross_mixer = CrossSpatialMamba4Path(dim=dim, share_mamba=share_mamba)
+        self.cross_mixer = CrossSpatialMamba4Path(
+            dim=dim,
+            share_mamba=share_mamba,
+            use_checkpoint=use_checkpoint,
+        )
         self.merge = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
 
     def forward(self, detail_feature, base_feature):
