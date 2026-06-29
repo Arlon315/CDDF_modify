@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 
 '''
 ------------------------------------------------------------------------------
@@ -47,6 +47,7 @@ criteria_pixel_bscl = PixelBSCLLoss()
 model_str = 'CDDFuse'
 
 parser = argparse.ArgumentParser(description="Train CDDFuse with checkpoint resume support.")
+parser.add_argument("--seed", type=int, default=0, help="Random seed.")
 parser.add_argument("--resume", type=str, default="", help="Path to a checkpoint to resume from.")
 parser.add_argument(
     "--resume_mode",
