@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+from CMEM_base import CMEMBaseFusion
 from SpatialMamba import SpatialMambaBaseFeature
 
 
@@ -1123,6 +1124,8 @@ def _normalize_base_fusion(base_fusion):
     base_fusion = str(base_fusion or 'base')
     if base_fusion.lower() == 'base':
         return 'base'
+    if base_fusion.lower() in ('cmem_base', 'cmembase', 'cmem'):
+        return 'cmem_base'
     if base_fusion.lower() in ('basesafm', 'base_safm', 'safm'):
         return 'baseSAFM'
     if base_fusion.lower() in ('windowmcam', 'window_mcam', 'swinwindowmcam', 'swin_window_mcam', 'mcam'):
@@ -1132,6 +1135,8 @@ def _normalize_base_fusion(base_fusion):
 
 def _build_base_fusion_module(base_fusion, backbone):
     base_fusion = _normalize_base_fusion(base_fusion)
+    if base_fusion == 'cmem_base':
+        return CMEMBaseFusion(dim=64, share_mamba=False)
     if base_fusion == 'windowMCAM':
         return SwinWindowMCAMBaseFusion(dim=64, inter_channels=16, window_size=8)
     if base_fusion == 'baseSAFM':
@@ -1287,6 +1292,8 @@ def infer_cddfuse_base_fusion(checkpoint):
     keys = _strip_module_prefixes(base_state)
     if any(str(key).startswith(('window_mcam.', 'shift_window_mcam.', 'refine.')) or str(key) == 'alpha' for key in keys):
         return 'windowMCAM'
+    if any(str(key).startswith(('cross_mixer.', 'ir_norm.', 'vi_norm.')) for key in keys):
+        return 'cmem_base'
     if any(str(key).startswith(('base.', 'safm.', 'proj.')) for key in keys):
         return 'baseSAFM'
 

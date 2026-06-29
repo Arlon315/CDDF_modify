@@ -83,9 +83,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--base_fusion",
-    choices=("base", "baseSAFM", "windowMCAM"),
-    default="windowMCAM",
-    help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
+    choices=("base", "baseSAFM", "windowMCAM", "cmem_base"),
+    default="cmem_base",
+    help="Use base fusion, baseSAFM fusion, Swin-WindowMCAM fusion, or CMEM cross-Mamba fusion.",
 )
 
 args = parser.parse_args()
