@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
+from net import BaseFeatureExtraction
 from SpatialMamba import LayerNorm
 
 try:
@@ -108,6 +109,8 @@ class CrossMambaSeqBlock(nn.Module):
         self.D_skip_d._no_weight_decay = True
         self.D_skip_b._no_weight_decay = True
 
+        self.detail_out_norm = LayerNorm(self.d_inner, 'WithBias')
+        self.base_out_norm = LayerNorm(self.d_inner, 'WithBias')
         self.out_proj = nn.Linear(self.d_inner, dim, bias=bias)
 
     def _init_dt_proj(self, module, dt_min, dt_max, dt_init, dt_scale, dt_init_floor):
@@ -209,6 +212,8 @@ class CrossMambaSeqBlock(nn.Module):
             delta_softplus=True,
         )
 
+        detail_y = self.detail_out_norm(detail_y.unsqueeze(2)).squeeze(2)
+        base_y = self.base_out_norm(base_y.unsqueeze(2)).squeeze(2)
         out = (detail_y + base_y).transpose(1, 2).contiguous()
         return self.out_proj(out)
 
@@ -300,11 +305,24 @@ class CrossMambaEnhanceModule(nn.Module):
             use_checkpoint=use_checkpoint,
         )
         self.merge = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
+        self.detail_branch_bn = nn.BatchNorm2d(dim)
+        self.base_branch_bn = nn.BatchNorm2d(dim)
+        self.branch_reduce = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=True)
+        self.branch_restormer = BaseFeatureExtraction(dim=dim, num_heads=8)
+
+        self.x_norm = LayerNorm(dim, 'WithBias')
 
     def forward(self, detail_feature, base_feature):
+        x = torch.cat((
+            self.detail_branch_bn(detail_feature),
+            self.base_branch_bn(base_feature),
+        ), dim=1)
+        x = self.branch_restormer(self.branch_reduce(x))
+        x = self.x_norm(x)
+
         cross = self.cross_mixer(
             self.detail_norm(detail_feature),
             self.base_norm(base_feature),
         )
         cross = self.merge(cross)
-        return detail_feature + base_feature + cross
+        return x + cross + detail_feature + base_feature
