@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 
 '''
 ------------------------------------------------------------------------------
@@ -22,16 +22,41 @@ from CMEM import CrossMambaEnhanceModule
 from utils.dataset import H5Dataset
 import argparse
 import os
+import random
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  
 import sys
 import time
 import datetime
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from utils.loss import Fusionloss, PixelBSCLLoss, cc
 import kornia
 
+
+def set_seed(seed):
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+# 42 3407 2026
+seed = 42
+set_seed(seed)
 
 
 '''
@@ -156,10 +181,15 @@ Loss_ssim = kornia.losses.SSIMLoss(11, reduction='mean')
 
 
 # data loader
+generator = torch.Generator()
+generator.manual_seed(seed)
+
 trainloader = DataLoader(H5Dataset(r"data/MSRS_train_imgsize_128_stride_200.h5"),
                          batch_size=batch_size,
                          shuffle=True,
-                         num_workers=16)
+                         num_workers=16,
+                         worker_init_fn=seed_worker,
+                         generator=generator)
 
 loader = {'train': trainloader, }
 timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M")
@@ -177,6 +207,7 @@ def get_detail_fusion_num_layers():
 def build_checkpoint(epoch):
     return {
         'epoch': epoch,
+        'seed': seed,
         'timestamp': timestamp,
         'backbone': args.backbone,
         'encoder_base_feature': encoder_base_feature,
