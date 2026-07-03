@@ -90,25 +90,25 @@ parser.add_argument(
 parser.add_argument(
     "--encoder_base_feature",
     choices=("auto", "spatial_mamba", "base"),
-    default="auto",
+    default="spatial_mamba",
     help="Encoder base branch. auto uses Spatial Mamba for restormer and NAF for fast.",
 )
 parser.add_argument(
     "--decoder_block",
     choices=("auto", "htb", "restormer", "naf"),
-    default="htb",
+    default="restormer",
     help="Decoder reconstruction block. auto uses HTB for restormer and NAF for fast.",
 )
 parser.add_argument(
     "--detail_fusion",
     choices=("cga", "dff", "inn"),
-    default="cga",
+    default="inn",
     help="Use CGAFusion, DFF-style fusion, or the original INN DetailFeatureExtraction fusion.",
 )
 parser.add_argument(
     "--base_fusion",
     choices=("base", "baseSAFM", "windowMCAM"),
-    default="windowMCAM",
+    default="base",
     help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
 )
 
