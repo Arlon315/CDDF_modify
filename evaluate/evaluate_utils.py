@@ -32,6 +32,7 @@ from net import (  # noqa: E402
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
     infer_cddfuse_encoder_base_feature,
+    infer_cddfuse_encoder_detail_feature,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
     infer_cddfuse_encoder_detail_enhance_layers,
@@ -84,6 +85,7 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
         encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
         encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
+        encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
         base_fusion=infer_cddfuse_base_fusion(checkpoint),
         decoder_block=infer_cddfuse_decoder_block(checkpoint),
     )

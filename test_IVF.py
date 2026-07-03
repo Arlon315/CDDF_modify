@@ -1,12 +1,13 @@
 from net import (
     build_cddfuse_modules,
-    DetailFeatureExtraction,
     fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
     infer_cddfuse_encoder_base_feature,
+    infer_cddfuse_encoder_detail_feature,
+    infer_cddfuse_encoder_detail_enhance_layers,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
@@ -82,17 +83,6 @@ def save_feature_visualizations(feature_dict, img_name, save_root, max_channels=
         img_save(grid_image, f"{feature_name}_first{channel_count:02d}_grid", sample_save_dir)
 
 
-def infer_encoder_detail_num_layers(checkpoint):
-    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
-    layer_indices = []
-    for key in encoder_state.keys():
-        key = key[7:] if isinstance(key, str) and key.startswith('module.') else key
-        parts = str(key).split('.')
-        if len(parts) > 2 and parts[0] == 'detailFeature' and parts[1] == 'net' and parts[2].isdigit():
-            layer_indices.append(int(parts[2]))
-    return max(layer_indices) + 1 if layer_indices else 3
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckpt-path', default=DEFAULT_CKPT_PATH)
@@ -137,11 +127,12 @@ def main():
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
+            encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
             encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
+            encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
             decoder_block=infer_cddfuse_decoder_block(checkpoint),
         )
-        encoder_module.detailFeature = DetailFeatureExtraction(num_layers=infer_encoder_detail_num_layers(checkpoint))
         Encoder = nn.DataParallel(encoder_module).to(device)
         Decoder = nn.DataParallel(decoder_module).to(device)
         BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)

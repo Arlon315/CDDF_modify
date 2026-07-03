@@ -1008,6 +1008,17 @@ def resolve_cddfuse_encoder_base_feature(encoder_base_feature=None, backbone='re
     raise ValueError(f"Unsupported encoder_base_feature: {encoder_base_feature}")
 
 
+def resolve_cddfuse_encoder_detail_feature(encoder_detail_feature=None):
+    encoder_detail_feature = str(encoder_detail_feature or 'auto').lower()
+    if encoder_detail_feature == 'auto':
+        return 'INN+DEConv'
+    if encoder_detail_feature == 'inn':
+        return 'INN'
+    if encoder_detail_feature in ('inn+deconv', 'inn_deconv'):
+        return 'INN+DEConv'
+    raise ValueError(f"Unsupported encoder_detail_feature: {encoder_detail_feature}")
+
+
 class Restormer_Encoder(nn.Module):
     def __init__(self,
                  inp_channels=1,
@@ -1021,6 +1032,7 @@ class Restormer_Encoder(nn.Module):
                  block_type='restormer',
                  detail_enhance_layers=2,
                  encoder_base_feature='spatial_mamba',
+                 encoder_detail_feature='auto',
                  ):
 
         super(Restormer_Encoder, self).__init__()
@@ -1029,17 +1041,18 @@ class Restormer_Encoder(nn.Module):
 
         self.encoder_level1 = nn.Sequential(*make_feature_blocks(
             block_type, dim, num_blocks[0], heads[0], ffn_expansion_factor, bias, LayerNorm_type))
+        encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
+        detail_num_layers = 3 if encoder_detail_feature == 'INN' else 1
         if str(block_type).lower() == 'naf':
             self.baseFeature = NAFBlock(dim=dim)
-            self.detailFeature = DetailFeatureExtraction(num_layers=1)
         else:
             encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, 'restormer')
             if encoder_base_feature == 'spatial_mamba':
                 self.baseFeature = SpatialMambaBaseFeature(dim=dim, num_layers=1, share_mamba=False)
             else:
                 self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
-            self.detailFeature = DetailFeatureExtraction(num_layers=1)
-        detail_enhance_layers = int(detail_enhance_layers or 0)
+        self.detailFeature = DetailFeatureExtraction(num_layers=detail_num_layers)
+        detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature == 'INN+DEConv' else 0
         if detail_enhance_layers > 0:
             self.detailEnhance = nn.Sequential(*[DEConv(dim) for _ in range(detail_enhance_layers)])
         else:
@@ -1157,17 +1170,22 @@ def build_cddfuse_modules(
     detail_fusion_num_layers=1,
     encoder_detail_enhance_layers=2,
     encoder_base_feature='auto',
+    encoder_detail_feature='auto',
     base_fusion='base',
     decoder_block='auto',
 ):
     backbone = str(backbone or 'restormer').lower()
     decoder_block = resolve_cddfuse_decoder_block(decoder_block, backbone)
     encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, backbone)
+    encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
     if backbone == 'fast':
         if decoder_block != 'naf':
             raise ValueError("backbone='fast' only supports decoder_block='auto' or 'naf'.")
         return (
-            FastRestormer_Encoder(detail_enhance_layers=encoder_detail_enhance_layers),
+            FastRestormer_Encoder(
+                detail_enhance_layers=encoder_detail_enhance_layers,
+                encoder_detail_feature=encoder_detail_feature,
+            ),
             FastRestormer_Decoder(),
             _build_base_fusion_module(base_fusion, backbone),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
@@ -1177,6 +1195,7 @@ def build_cddfuse_modules(
             Restormer_Encoder(
                 detail_enhance_layers=encoder_detail_enhance_layers,
                 encoder_base_feature=encoder_base_feature,
+                encoder_detail_feature=encoder_detail_feature,
             ),
             Restormer_Decoder(block_type=decoder_block),
             _build_base_fusion_module(base_fusion, backbone),
@@ -1227,6 +1246,27 @@ def infer_cddfuse_encoder_base_feature(checkpoint):
         return 'base'
 
     return resolve_cddfuse_encoder_base_feature('auto', backbone)
+
+
+def infer_cddfuse_encoder_detail_feature(checkpoint):
+    encoder_detail_feature = checkpoint.get('encoder_detail_feature') if isinstance(checkpoint, dict) else None
+    if encoder_detail_feature:
+        return resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
+
+    encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
+    keys = _strip_module_prefixes(encoder_state)
+    if any(str(key).startswith('detailEnhance.') for key in keys):
+        return 'INN+DEConv'
+
+    detail_layer_indices = []
+    for key in keys:
+        parts = str(key).split('.')
+        if len(parts) > 2 and parts[0] == 'detailFeature' and parts[1] == 'net' and parts[2].isdigit():
+            detail_layer_indices.append(int(parts[2]))
+    if detail_layer_indices and max(detail_layer_indices) + 1 >= 3:
+        return 'INN'
+
+    return resolve_cddfuse_encoder_detail_feature('auto')
 
 
 def infer_cddfuse_detail_fusion(checkpoint):
