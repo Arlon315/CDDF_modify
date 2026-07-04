@@ -98,25 +98,25 @@ parser.add_argument(
 parser.add_argument(
     "--encoder_detail_feature",
     choices=("auto", "INN", "INN+DEConv"),
-    default="INN",
+    default="INN+DEConv",
     help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes.",
 )
 parser.add_argument(
     "--decoder_block",
     choices=("auto", "htb", "restormer", "naf"),
-    default="restormer",
+    default="htb",
     help="Decoder reconstruction block. auto uses HTB for restormer and NAF for fast.",
 )
 parser.add_argument(
     "--detail_fusion",
     choices=("cga", "dff", "inn"),
-    default="inn",
+    default="cga",
     help="Use CGAFusion, DFF-style fusion, or the original INN DetailFeatureExtraction fusion.",
 )
 parser.add_argument(
     "--base_fusion",
     choices=("base", "baseSAFM", "windowMCAM"),
-    default="base",
+    default="windowMCAM",
     help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
 )
 
