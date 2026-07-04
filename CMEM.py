@@ -311,6 +311,11 @@ class CrossMambaEnhanceModule(nn.Module):
         self.branch_restormer = BaseFeatureExtraction(dim=dim, num_heads=8)
 
         self.x_norm = LayerNorm(dim, 'WithBias')
+        self.cross_norm = LayerNorm(dim, 'WithBias')
+        self.ir_norm = LayerNorm(dim, 'WithBias')
+        self.vi_norm = LayerNorm(dim, 'WithBias')
+
+        self.fusion_proj = nn.Conv2d(dim * 4, dim, 1, bias=True)
 
     def forward(self, detail_feature, base_feature):
         x = torch.cat((
@@ -325,4 +330,12 @@ class CrossMambaEnhanceModule(nn.Module):
             self.base_norm(base_feature),
         )
         cross = self.merge(cross)
-        return x + cross + detail_feature + base_feature
+
+        cross = self.cross_norm(cross)
+        detail_feature = self.ir_norm(detail_feature)
+        base_feature = self.vi_norm(base_feature)
+
+        fused = torch.cat((x, cross, detail_feature, base_feature), dim=1)
+        fused = self.fusion_proj(fused)
+    
+        return fused
