@@ -11,6 +11,7 @@ from net import (
     fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
+    infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
     infer_cddfuse_encoder_base_feature,
@@ -80,9 +81,15 @@ parser.add_argument(
 )
 parser.add_argument(
     "--base_fusion",
-    choices=("base", "baseSAFM", "windowMCAM"),
-    default="windowMCAM",
-    help="Use base fusion, baseSAFM fusion, or Swin-WindowMCAM fusion.",
+    choices=("base", "baseSAFM", "windowMCAM", "gmem"),
+    default="gmem",
+    help="Use base fusion, baseSAFM fusion, Swin-WindowMCAM fusion, or GMEM.",
+)
+parser.add_argument(
+    "--gmem_share_mode",
+    choices=("independent", "axis", "all"),
+    default="independent",
+    help="GMEM direction parameter sharing: independent, axis, or all.",
 )
 
 args = parser.parse_args()
@@ -90,7 +97,11 @@ encoder_base_feature = resolve_cddfuse_encoder_base_feature(args.encoder_base_fe
 decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
 encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
-base_fusion_suffix = "" if args.base_fusion == "base" else f"_{args.base_fusion}"
+base_fusion_suffix = (
+    f"_gmem_{args.gmem_share_mode}"
+    if args.base_fusion == "gmem"
+    else ("" if args.base_fusion == "base" else f"_{args.base_fusion}")
+)
 model_str = f"{args.backbone}{encoder_base_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}"
 
 # . Set the hyper-parameters for training
@@ -120,6 +131,7 @@ encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cdd
     detail_fusion=args.detail_fusion,
     encoder_base_feature=encoder_base_feature,
     base_fusion=args.base_fusion,
+    gmem_share_mode=args.gmem_share_mode,
     decoder_block=decoder_block,
 )
 DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
@@ -175,6 +187,7 @@ def build_checkpoint(epoch):
         'decoder_block': decoder_block,
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
+        'gmem_share_mode': args.gmem_share_mode,
         'accumulation_steps': accumulation_steps,
         'encoder_detail_enhance': 'deconv',
         'encoder_detail_enhance_layers': 2,
@@ -298,10 +311,16 @@ if args.resume:
     checkpoint_encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
     checkpoint_detail_fusion = infer_cddfuse_detail_fusion(checkpoint)
     checkpoint_base_fusion = infer_cddfuse_base_fusion(checkpoint)
+    checkpoint_gmem_share_mode = infer_cddfuse_gmem_share_mode(checkpoint)
     decoder_block_matches = checkpoint_decoder_block == decoder_block
     encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
     detail_fusion_matches = checkpoint_detail_fusion == args.detail_fusion
-    base_fusion_matches = checkpoint_base_fusion == args.base_fusion
+    gmem_share_mode_matches = (
+        checkpoint_base_fusion != 'gmem'
+        or args.base_fusion != 'gmem'
+        or checkpoint_gmem_share_mode == args.gmem_share_mode
+    )
+    base_fusion_matches = checkpoint_base_fusion == args.base_fusion and gmem_share_mode_matches
     resume_mode = args.resume_mode
     if resume_mode == "auto":
         resume_mode = (
@@ -325,6 +344,11 @@ if args.resume:
             raise ValueError(
                 f"Checkpoint detail_fusion is '{checkpoint_detail_fusion}', "
                 f"but current --detail_fusion is '{args.detail_fusion}'."
+            )
+        if not gmem_share_mode_matches:
+            raise ValueError(
+                f"Checkpoint gmem_share_mode is '{checkpoint_gmem_share_mode}', "
+                f"but current --gmem_share_mode is '{args.gmem_share_mode}'."
             )
         if not base_fusion_matches:
             raise ValueError(

@@ -29,6 +29,7 @@ from net import (  # noqa: E402
     fuse_base_features,
     fuse_detail_features,
     infer_cddfuse_base_fusion,
+    infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
     infer_cddfuse_encoder_base_feature,
@@ -87,6 +88,7 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, torch.nn.Modul
         encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
         encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
         base_fusion=infer_cddfuse_base_fusion(checkpoint),
+        gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
         decoder_block=infer_cddfuse_decoder_block(checkpoint),
     )
     encoder = encoder.to(device)

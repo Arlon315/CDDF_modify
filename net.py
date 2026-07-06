@@ -4,6 +4,7 @@ import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from SpatialMamba import SpatialMambaBaseFeature
+from GMEM import GlobalMambaEnhanceModel, infer_gmem_share_mode
 
 
 def rearrange(x, pattern, **kwargs):
@@ -1140,11 +1141,15 @@ def _normalize_base_fusion(base_fusion):
         return 'baseSAFM'
     if base_fusion.lower() in ('windowmcam', 'window_mcam', 'swinwindowmcam', 'swin_window_mcam', 'mcam'):
         return 'windowMCAM'
+    if base_fusion.lower() == 'gmem':
+        return 'gmem'
     raise ValueError(f"Unsupported base_fusion: {base_fusion}")
 
 
-def _build_base_fusion_module(base_fusion, backbone):
+def _build_base_fusion_module(base_fusion, backbone, gmem_share_mode='independent'):
     base_fusion = _normalize_base_fusion(base_fusion)
+    if base_fusion == 'gmem':
+        return GlobalMambaEnhanceModel(dim=64, share_mode=gmem_share_mode)
     if base_fusion == 'windowMCAM':
         return SwinWindowMCAMBaseFusion(dim=64, inter_channels=16, window_size=8)
     if base_fusion == 'baseSAFM':
@@ -1172,6 +1177,7 @@ def build_cddfuse_modules(
     encoder_base_feature='auto',
     encoder_detail_feature='auto',
     base_fusion='base',
+    gmem_share_mode='independent',
     decoder_block='auto',
 ):
     backbone = str(backbone or 'restormer').lower()
@@ -1187,7 +1193,7 @@ def build_cddfuse_modules(
                 encoder_detail_feature=encoder_detail_feature,
             ),
             FastRestormer_Decoder(),
-            _build_base_fusion_module(base_fusion, backbone),
+            _build_base_fusion_module(base_fusion, backbone, gmem_share_mode),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
         )
     if backbone == 'restormer':
@@ -1198,7 +1204,7 @@ def build_cddfuse_modules(
                 encoder_detail_feature=encoder_detail_feature,
             ),
             Restormer_Decoder(block_type=decoder_block),
-            _build_base_fusion_module(base_fusion, backbone),
+            _build_base_fusion_module(base_fusion, backbone, gmem_share_mode),
             _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers),
         )
     raise ValueError(f"Unsupported backbone: {backbone}")
@@ -1325,12 +1331,18 @@ def infer_cddfuse_base_fusion(checkpoint):
 
     base_state = checkpoint.get('BaseFuseLayer', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(base_state)
+    if any(str(key).startswith('global_mixer.') for key in keys):
+        return 'gmem'
     if any(str(key).startswith(('window_mcam.', 'shift_window_mcam.', 'refine.')) or str(key) == 'alpha' for key in keys):
         return 'windowMCAM'
     if any(str(key).startswith(('base.', 'safm.', 'proj.')) for key in keys):
         return 'baseSAFM'
 
     return 'base'
+
+
+def infer_cddfuse_gmem_share_mode(checkpoint):
+    return infer_gmem_share_mode(checkpoint)
 
 
 def infer_cddfuse_detail_num_layers(checkpoint):
