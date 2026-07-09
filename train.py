@@ -82,7 +82,7 @@ parser.add_argument(
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/ablation/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/GMEM+AKDEConv+CMEM/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
@@ -99,7 +99,7 @@ parser.add_argument(
 parser.add_argument(
     "--encoder_detail_feature",
     choices=("auto", "INN", "INN+DEConv", "INN+AKDEConv"),
-    default="INN+DEConv",
+    default="INN+AKDEConv",
     help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes; INN+AKDEConv adds an AKConv detail branch.",
 )
 parser.add_argument(
