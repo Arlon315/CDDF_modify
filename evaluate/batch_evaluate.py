@@ -144,11 +144,11 @@ def get_project_defaults() -> Mapping[str, object]:
                 "vis_dir": "image/21_pairs_tno/vis",
                 "num_pairs": 1,
             },
-            "40_vot_tno": {
-                "ir_dir": "image/40_vot_tno/ir",
-                "vis_dir": "image/40_vot_tno/vis",
-                "num_pairs": 40,
-            },
+            # "40_vot_tno": {
+            #     "ir_dir": "image/40_vot_tno/ir",
+            #     "vis_dir": "image/40_vot_tno/vis",
+            #     "num_pairs": 40,
+            # },
             "MSRS": {
                 "ir_dir": "image/MSRS/ir",
                 "vis_dir": "image/MSRS/vi",
@@ -184,6 +184,11 @@ def get_project_defaults() -> Mapping[str, object]:
                 "ir_dir" : os.path.expanduser(r"~/rivermind-data/dataSets/MSRS-main/test/ir"),
                 "vis_dir" : os.path.expanduser(r"~/rivermind-data/dataSets/MSRS-main/test/vi"),
                 "num_pairs": 361,
+            },
+            "40_vot_tno": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/ir"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/vis"),
+                "num_pairs": 40,
             },
         },
         "default_dataset": "MSRS-main",

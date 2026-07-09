@@ -548,6 +548,96 @@ class Conv2d_vd(nn.Module):
         return conv_weight_vd, self.conv.bias
 
 
+class AKConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, num_points=9, stride=1, bias=True):
+        super(AKConv2d, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_points = num_points
+        self.stride = stride
+
+        side = int(math.sqrt(num_points))
+        if side * side != num_points:
+            raise ValueError("AKConv2d currently expects a square number of sampling points.")
+        radius = side // 2
+        offsets = []
+        for y in range(-radius, radius + 1):
+            for x in range(-radius, radius + 1):
+                offsets.append((y, x))
+        self.register_buffer('base_offsets', torch.tensor(offsets, dtype=torch.float32))
+
+        self.offset = nn.Conv2d(
+            in_channels,
+            2 * num_points,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=True,
+        )
+        self.weight = nn.Parameter(torch.empty(out_channels, in_channels, num_points))
+        self.bias = nn.Parameter(torch.empty(out_channels)) if bias else None
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.zeros_(self.offset.weight)
+        nn.init.zeros_(self.offset.bias)
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            bound = 1 / math.sqrt(self.in_channels * self.num_points)
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x):
+        batch, channels, height, width = x.shape
+        offset = self.offset(x)
+        out_height, out_width = offset.shape[-2:]
+        offset = offset.view(batch, self.num_points, 2, out_height, out_width)
+
+        y_base = torch.arange(out_height, device=x.device, dtype=x.dtype) * self.stride
+        x_base = torch.arange(out_width, device=x.device, dtype=x.dtype) * self.stride
+        yy, xx = torch.meshgrid(y_base, x_base, indexing='ij')
+        base = torch.stack((yy, xx), dim=0).view(1, 1, 2, out_height, out_width)
+        kernel_offsets = self.base_offsets.to(dtype=x.dtype).view(1, self.num_points, 2, 1, 1)
+        coords = base + kernel_offsets + offset
+
+        if height > 1:
+            grid_y = 2.0 * coords[:, :, 0] / (height - 1) - 1.0
+        else:
+            grid_y = coords[:, :, 0] * 0.0
+        if width > 1:
+            grid_x = 2.0 * coords[:, :, 1] / (width - 1) - 1.0
+        else:
+            grid_x = coords[:, :, 1] * 0.0
+
+        samples = []
+        for point in range(self.num_points):
+            grid = torch.stack((grid_x[:, point], grid_y[:, point]), dim=-1)
+            samples.append(
+                F.grid_sample(
+                    x,
+                    grid,
+                    mode='bilinear',
+                    padding_mode='zeros',
+                    align_corners=True,
+                )
+            )
+        sampled = torch.stack(samples, dim=2)
+        out = torch.einsum('b c n h w, o c n -> b o h w', sampled, self.weight)
+        if self.bias is not None:
+            out = out + self.bias.view(1, -1, 1, 1)
+        return out
+
+
+class AKCBlock(nn.Module):
+    def __init__(self, dim):
+        super(AKCBlock, self).__init__()
+        self.akconv = AKConv2d(dim, dim, num_points=9, bias=True)
+        self.mix1 = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
+        self.mix2 = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
+
+    def forward(self, x):
+        return x + self.mix2(self.mix1(self.akconv(x)))
+
+
 class DEConv(nn.Module):
     def __init__(self, dim):
         super(DEConv, self).__init__()
@@ -567,6 +657,29 @@ class DEConv(nn.Module):
         weight = w1 + w2 + w3 + w4 + w5
         bias = b1 + b2 + b3 + b4 + b5
         return F.conv2d(input=x, weight=weight, bias=bias, stride=1, padding=1, groups=1)
+
+
+class AKDEConv(nn.Module):
+    def __init__(self, dim):
+        super(AKDEConv, self).__init__()
+        self.conv1_1 = Conv2d_cd(dim, dim, 3, bias=True)
+        self.conv1_2 = Conv2d_hd(dim, dim, 3, bias=True)
+        self.conv1_3 = Conv2d_vd(dim, dim, 3, bias=True)
+        self.conv1_4 = Conv2d_ad(dim, dim, 3, bias=True)
+        self.conv1_5 = nn.Conv2d(dim, dim, 3, padding=1, bias=True)
+        self.conv1_6 = AKCBlock(dim)
+
+    def forward(self, x):
+        w1, b1 = self.conv1_1.get_weight()
+        w2, b2 = self.conv1_2.get_weight()
+        w3, b3 = self.conv1_3.get_weight()
+        w4, b4 = self.conv1_4.get_weight()
+        w5, b5 = self.conv1_5.weight, self.conv1_5.bias
+
+        weight = w1 + w2 + w3 + w4 + w5
+        bias = b1 + b2 + b3 + b4 + b5
+        deconv = F.conv2d(input=x, weight=weight, bias=bias, stride=1, padding=1, groups=1)
+        return deconv + self.conv1_6(x)
 
 
 class SpatialAttention(nn.Module):
@@ -1017,6 +1130,8 @@ def resolve_cddfuse_encoder_detail_feature(encoder_detail_feature=None):
         return 'INN'
     if encoder_detail_feature in ('inn+deconv', 'inn_deconv'):
         return 'INN+DEConv'
+    if encoder_detail_feature in ('inn+akdeconv', 'inn_akdeconv'):
+        return 'INN+AKDEConv'
     raise ValueError(f"Unsupported encoder_detail_feature: {encoder_detail_feature}")
 
 
@@ -1053,9 +1168,11 @@ class Restormer_Encoder(nn.Module):
             else:
                 self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
         self.detailFeature = DetailFeatureExtraction(num_layers=detail_num_layers)
-        detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature == 'INN+DEConv' else 0
+        detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0
+        self.detail_enhance_residual = encoder_detail_feature == 'INN+AKDEConv' and detail_enhance_layers > 0
         if detail_enhance_layers > 0:
-            self.detailEnhance = nn.Sequential(*[DEConv(dim) for _ in range(detail_enhance_layers)])
+            enhance_block = AKDEConv if encoder_detail_feature == 'INN+AKDEConv' else DEConv
+            self.detailEnhance = nn.Sequential(*[enhance_block(dim) for _ in range(detail_enhance_layers)])
         else:
             self.detailEnhance = nn.Identity()
              
@@ -1064,7 +1181,10 @@ class Restormer_Encoder(nn.Module):
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
         base_feature = self.baseFeature(out_enc_level1)
         detail_feature = self.detailFeature(out_enc_level1)
-        detail_feature = self.detailEnhance(detail_feature)
+        if self.detail_enhance_residual:
+            detail_feature = detail_feature + self.detailEnhance(detail_feature)
+        else:
+            detail_feature = self.detailEnhance(detail_feature)
         return base_feature, detail_feature, out_enc_level1
 
 class Restormer_Decoder(nn.Module):
@@ -1261,6 +1381,8 @@ def infer_cddfuse_encoder_detail_feature(checkpoint):
 
     encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(encoder_state)
+    if any(str(key).startswith('detailEnhance.') and '.conv1_6.' in str(key) for key in keys):
+        return 'INN+AKDEConv'
     if any(str(key).startswith('detailEnhance.') for key in keys):
         return 'INN+DEConv'
 

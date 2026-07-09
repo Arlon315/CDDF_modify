@@ -1,0 +1,286 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100">
+  <title>CMEM Cross-Z Mamba Block</title>
+  <defs>
+    <marker id="arrow-dark" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L14,5 L0,10 Z" fill="#303236"/>
+    </marker>
+    <marker id="arrow-detail" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L14,5 L0,10 Z" fill="#d84f76"/>
+    </marker>
+    <marker id="arrow-base" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L14,5 L0,10 Z" fill="#4f6ed8"/>
+    </marker>
+    <marker id="arrow-z" markerWidth="16" markerHeight="12" refX="14" refY="6" orient="auto">
+      <path d="M0,0 L16,6 L0,12 Z" fill="#f28b22"/>
+    </marker>
+    <linearGradient id="detail-grad" x1="0" x2="1">
+      <stop offset="0" stop-color="#ffe6ee"/>
+      <stop offset="1" stop-color="#ffd1df"/>
+    </linearGradient>
+    <linearGradient id="base-grad" x1="0" x2="1">
+      <stop offset="0" stop-color="#e5ecff"/>
+      <stop offset="1" stop-color="#d4ddff"/>
+    </linearGradient>
+    <linearGradient id="ssm-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3f4248"/>
+      <stop offset="1" stop-color="#15171a"/>
+    </linearGradient>
+    <linearGradient id="out-grad" x1="0" x2="1">
+      <stop offset="0" stop-color="#23a7b8"/>
+      <stop offset="1" stop-color="#68d2c2"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      text {
+        font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+        fill: #23262b;
+      }
+      .title { font-size: 46px; font-weight: 800; letter-spacing: 0; }
+      .subtitle { font-size: 22px; fill: #6d727b; }
+      .branch-title { font-size: 28px; font-weight: 800; }
+      .label { font-size: 22px; font-weight: 700; }
+      .small { font-size: 17px; fill: #69707a; }
+      .tiny { font-size: 15px; fill: #69707a; }
+      .italic { font-size: 24px; fill: #5c6068; font-style: italic; }
+      .box {
+        fill: #ffffff;
+        stroke: #34373c;
+        stroke-width: 3;
+        rx: 12;
+        filter: url(#soft-shadow);
+      }
+      .detail-box {
+        fill: url(#detail-grad);
+        stroke: #d84f76;
+        stroke-width: 3;
+        rx: 12;
+      }
+      .base-box {
+        fill: url(#base-grad);
+        stroke: #4f6ed8;
+        stroke-width: 3;
+        rx: 12;
+      }
+      .z-box {
+        fill: #fff3df;
+        stroke: #f28b22;
+        stroke-width: 3;
+        rx: 12;
+      }
+      .ssm {
+        fill: url(#ssm-grad);
+        stroke: #111315;
+        stroke-width: 2.5;
+        rx: 16;
+      }
+      .line-dark {
+        fill: none;
+        stroke: #303236;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        marker-end: url(#arrow-dark);
+      }
+      .line-detail {
+        fill: none;
+        stroke: #d84f76;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        marker-end: url(#arrow-detail);
+      }
+      .line-base {
+        fill: none;
+        stroke: #4f6ed8;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        marker-end: url(#arrow-base);
+      }
+      .line-z {
+        fill: none;
+        stroke: #f28b22;
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        marker-end: url(#arrow-z);
+      }
+      .line-z-soft {
+        fill: none;
+        stroke: #f28b22;
+        stroke-width: 5;
+        stroke-dasharray: 12 10;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .dash {
+        fill: none;
+        stroke: #8b9098;
+        stroke-width: 4;
+        stroke-dasharray: 8 10;
+        stroke-linecap: round;
+      }
+      .outer {
+        fill: #ffffff;
+        stroke: #050505;
+        stroke-width: 24;
+        rx: 34;
+        filter: url(#soft-shadow);
+      }
+      .mini {
+        fill: #050505;
+        stroke: #050505;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .mini-line {
+        fill: none;
+        stroke: #bfc3c9;
+        stroke-width: 5;
+        stroke-linecap: round;
+        stroke-dasharray: 3 16;
+      }
+      .token-stroke { stroke: #3d4146; stroke-width: 1.3; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="#f7f8fa"/>
+
+  <g transform="translate(58,360)">
+    <path d="M265,-95 C345,20 425,130 530,180" class="dash"/>
+    <path d="M265,185 C345,135 425,115 530,120" class="dash"/>
+    <rect x="0" y="0" width="420" height="112" class="mini"/>
+    <rect x="-20" y="-18" width="420" height="112" fill="none" stroke="#050505" stroke-width="8" rx="18" opacity="0.9"/>
+    <rect x="-38" y="-34" width="420" height="112" fill="none" stroke="#050505" stroke-width="6" rx="18" opacity="0.75"/>
+    <text x="42" y="70" fill="#ffffff" font-size="34" font-weight="800">Cross-Z Mamba Block</text>
+    <text x="42" y="24" fill="#ffffff" font-size="18" font-weight="700">CMEM</text>
+    <path d="M210,-75 V-20" class="mini-line"/>
+    <path d="M210,132 V190" class="mini-line"/>
+  </g>
+
+  <g transform="translate(575,55)">
+    <rect x="0" y="0" width="955" height="950" class="outer"/>
+    <text x="355" y="-7" class="title">CMEM Cross-Z Mamba Block</text>
+    <text x="430" y="35" class="subtitle">鍙屽垎鏀壒寰佹祦 + 浜ゆ崲闂ㄦ帶 Z</text>
+
+    <g transform="translate(70,75)">
+      <rect x="0" y="0" width="345" height="48" class="detail-box"/>
+      <text x="172" y="32" text-anchor="middle" class="branch-title">Detail Branch</text>
+      <rect x="37" y="80" width="270" height="68" class="detail-box"/>
+      <text x="172" y="123" text-anchor="middle" class="label">Detail Input</text>
+      <text x="172" y="171" text-anchor="middle" class="italic">projection</text>
+      <path d="M92,157 L252,157 L307,210 L37,210 Z" fill="#fff9fb" stroke="#d84f76" stroke-width="2.5" stroke-dasharray="8 8"/>
+
+      <g transform="translate(52,210)">
+        <rect x="0" y="0" width="48" height="44" fill="#ef6d91" class="token-stroke"/>
+        <rect x="48" y="0" width="48" height="44" fill="#ffd0de" class="token-stroke"/>
+        <rect x="96" y="0" width="48" height="44" fill="#f79bb4" class="token-stroke"/>
+        <rect x="144" y="0" width="48" height="44" fill="#ef6d91" class="token-stroke"/>
+        <rect x="192" y="0" width="48" height="44" fill="#ffe5ec" class="token-stroke"/>
+      </g>
+
+      <rect x="38" y="295" width="128" height="64" class="detail-box"/>
+      <text x="102" y="336" text-anchor="middle" class="label">x_D</text>
+      <rect x="220" y="295" width="128" height="64" class="z-box"/>
+      <text x="284" y="336" text-anchor="middle" class="label">z_D</text>
+
+      <rect x="54" y="410" width="225" height="62" class="box"/>
+      <text x="166" y="450" text-anchor="middle" class="label">DW Conv + SiLU</text>
+      <rect x="45" y="525" width="250" height="112" class="ssm"/>
+      <text x="170" y="570" text-anchor="middle" fill="#ffffff" font-size="34" font-weight="800">Selective</text>
+      <text x="170" y="612" text-anchor="middle" fill="#ffffff" font-size="34" font-weight="800">SSM_D</text>
+      <circle cx="170" cy="708" r="38" fill="#ffffff" stroke="#303236" stroke-width="5"/>
+      <text x="170" y="720" text-anchor="middle" font-size="35" font-weight="800">x</text>
+      <rect x="54" y="785" width="225" height="58" class="detail-box"/>
+      <text x="166" y="822" text-anchor="middle" class="label">Y_D</text>
+
+      <path d="M172,148 V192" class="line-detail"/>
+      <path d="M122,254 V295" class="line-detail"/>
+      <path d="M276,254 V295" class="line-z-soft"/>
+      <path d="M102,359 V410" class="line-detail"/>
+      <path d="M166,472 V525" class="line-detail"/>
+      <path d="M170,637 V670" class="line-detail"/>
+      <path d="M170,746 V785" class="line-detail"/>
+    </g>
+
+    <g transform="translate(540,75)">
+      <rect x="0" y="0" width="345" height="48" class="base-box"/>
+      <text x="172" y="32" text-anchor="middle" class="branch-title">Base Branch</text>
+      <rect x="37" y="80" width="270" height="68" class="base-box"/>
+      <text x="172" y="123" text-anchor="middle" class="label">Base Input</text>
+      <text x="172" y="171" text-anchor="middle" class="italic">projection</text>
+      <path d="M92,157 L252,157 L307,210 L37,210 Z" fill="#f8faff" stroke="#4f6ed8" stroke-width="2.5" stroke-dasharray="8 8"/>
+
+      <g transform="translate(52,210)">
+        <rect x="0" y="0" width="48" height="44" fill="#718be8" class="token-stroke"/>
+        <rect x="48" y="0" width="48" height="44" fill="#d5ddff" class="token-stroke"/>
+        <rect x="96" y="0" width="48" height="44" fill="#99aaf0" class="token-stroke"/>
+        <rect x="144" y="0" width="48" height="44" fill="#718be8" class="token-stroke"/>
+        <rect x="192" y="0" width="48" height="44" fill="#eef2ff" class="token-stroke"/>
+      </g>
+
+      <rect x="-4" y="295" width="128" height="64" class="z-box"/>
+      <text x="60" y="336" text-anchor="middle" class="label">z_B</text>
+      <rect x="178" y="295" width="128" height="64" class="base-box"/>
+      <text x="242" y="336" text-anchor="middle" class="label">x_B</text>
+
+      <rect x="66" y="410" width="225" height="62" class="box"/>
+      <text x="178" y="450" text-anchor="middle" class="label">DW Conv + SiLU</text>
+      <rect x="55" y="525" width="250" height="112" class="ssm"/>
+      <text x="180" y="570" text-anchor="middle" fill="#ffffff" font-size="34" font-weight="800">Selective</text>
+      <text x="180" y="612" text-anchor="middle" fill="#ffffff" font-size="34" font-weight="800">SSM_B</text>
+      <circle cx="180" cy="708" r="38" fill="#ffffff" stroke="#303236" stroke-width="5"/>
+      <text x="180" y="720" text-anchor="middle" font-size="35" font-weight="800">x</text>
+      <rect x="66" y="785" width="225" height="58" class="base-box"/>
+      <text x="178" y="822" text-anchor="middle" class="label">Y_B</text>
+
+      <path d="M172,148 V192" class="line-base"/>
+      <path d="M242,254 V295" class="line-base"/>
+      <path d="M60,254 V295" class="line-z-soft"/>
+      <path d="M242,359 V410" class="line-base"/>
+      <path d="M178,472 V525" class="line-base"/>
+      <path d="M180,637 V670" class="line-base"/>
+      <path d="M180,746 V785" class="line-base"/>
+    </g>
+
+    <path d="M354,435 C430,500 505,595 718,753" class="line-z"/>
+    <path d="M600,435 C520,500 445,595 242,753" class="line-z"/>
+    <text x="478" y="486" text-anchor="middle" fill="#f28b22" font-size="27" font-weight="900">浜ゆ崲 Z 闂ㄦ帶</text>
+    <text x="478" y="518" text-anchor="middle" class="small">z_D gates Base, z_B gates Detail</text>
+
+    <rect x="360" y="713" width="235" height="82" fill="#fff8ee" stroke="#f28b22" stroke-width="3" rx="18"/>
+    <text x="477" y="746" text-anchor="middle" fill="#f28b22" font-size="24" font-weight="900">Cross Gate</text>
+    <text x="477" y="775" text-anchor="middle" class="small">鍙氦鎹?z锛屼笉浜ゆ崲 x</text>
+
+    <circle cx="478" cy="845" r="42" fill="#ffffff" stroke="#303236" stroke-width="5"/>
+    <text x="478" y="859" text-anchor="middle" font-size="42" font-weight="800">+</text>
+    <rect x="345" y="900" width="265" height="64" fill="url(#out-grad)" stroke="#188999" stroke-width="3" rx="14"/>
+    <text x="478" y="941" text-anchor="middle" fill="#ffffff" font-size="25" font-weight="900">Output Linear</text>
+
+    <path d="M236,918 C310,918 375,876 440,858" class="line-detail"/>
+    <path d="M718,918 C650,918 585,876 516,858" class="line-base"/>
+    <path d="M478,887 V900" class="line-dark"/>
+  </g>
+
+  <g transform="translate(933,1036)">
+    <g>
+      <rect x="0" y="0" width="48" height="44" fill="#22a5b7" class="token-stroke"/>
+      <rect x="48" y="0" width="48" height="44" fill="#d6f1f3" class="token-stroke"/>
+      <rect x="96" y="0" width="48" height="44" fill="#8bd8d4" class="token-stroke"/>
+      <rect x="144" y="0" width="48" height="44" fill="#58c4ce" class="token-stroke"/>
+      <rect x="192" y="0" width="48" height="44" fill="#c5ebee" class="token-stroke"/>
+    </g>
+    <text x="120" y="-18" text-anchor="middle" class="subtitle">Cross-enhanced Feature</text>
+  </g>
+
+  <g transform="translate(72,790)">
+    <rect x="0" y="0" width="430" height="112" fill="#ffffff" stroke="#d4d8de" stroke-width="2" rx="18"/>
+    <text x="24" y="35" font-size="21" font-weight="800">鍥句腑鐪佺暐鐨勯儴鍒?/text>
+    <text x="24" y="66" class="small">dt, B, C 鍙傛暟鐢熸垚銆丄/D skip銆丩ayerNorm</text>
+    <text x="24" y="94" class="small">鍥涙柟鍚戞壂鎻忓彲澶栧寘鍦?CrossSpatialMamba4Path 涓?/text>
+  </g>
+</svg>
+

@@ -98,9 +98,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--encoder_detail_feature",
-    choices=("auto", "INN", "INN+DEConv"),
+    choices=("auto", "INN", "INN+DEConv", "INN+AKDEConv"),
     default="INN+DEConv",
-    help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes.",
+    help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes; INN+AKDEConv adds an AKConv detail branch.",
 )
 parser.add_argument(
     "--decoder_block",
@@ -239,9 +239,9 @@ def build_checkpoint(epoch):
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
         'gmem_share_mode': args.gmem_share_mode,
-        'encoder_detail_enhance': 'deconv' if encoder_detail_feature == 'INN+DEConv' else None,
-        'encoder_detail_enhance_layers': 2 if encoder_detail_feature == 'INN+DEConv' else 0,
-        'encoder_detail_num_layers': 1 if encoder_detail_feature == 'INN+DEConv' else 3,
+        'encoder_detail_enhance': 'akdeconv' if encoder_detail_feature == 'INN+AKDEConv' else ('deconv' if encoder_detail_feature == 'INN+DEConv' else None),
+        'encoder_detail_enhance_layers': 2 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0,
+        'encoder_detail_num_layers': 1 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 3,
         'decoder_freq_enhance': 'dynamic_filter',
         'cmem_share_mamba': False,
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
