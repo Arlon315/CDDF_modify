@@ -13,6 +13,13 @@ from net import (
     infer_cddfuse_detail_num_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
+from CrossMambaFusion import (
+    CrossMambaFusionBlock,
+    IntraModalEnhanceBlock,
+    get_decoder_residual_input,
+    infer_cross_mamba_share_mode,
+    is_cross_mamba_fusion_checkpoint,
+)
 import argparse
 import os
 import numpy as np
@@ -121,7 +128,8 @@ def main():
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(args.ckpt_path, map_location=device)
-        use_fmem = 'FMEMLayer' in checkpoint
+        use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
+        use_fmem = 'FMEMLayer' in checkpoint and not use_new_fusion
         if use_fmem and not is_cmem_checkpoint(checkpoint):
             raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
         encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
@@ -137,30 +145,50 @@ def main():
         )
         Encoder = nn.DataParallel(encoder_module).to(device)
         Decoder = nn.DataParallel(decoder_module).to(device)
-        BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
-        DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
+        BaseFuseLayer = None
+        DetailFuseLayer = None
+        ModalEnhanceLayer = None
+        CrossMambaFusionLayer = None
         FMEMLayer = None
-        if use_fmem:
-            FMEMLayer = nn.DataParallel(
-                CrossMambaEnhanceModule(
+        if use_new_fusion:
+            ModalEnhanceLayer = nn.DataParallel(IntraModalEnhanceBlock(dim=64)).to(device)
+            CrossMambaFusionLayer = nn.DataParallel(
+                CrossMambaFusionBlock(
                     dim=64,
-                    share_mamba=infer_cmem_share_mamba(checkpoint),
+                    share_mode=infer_cross_mamba_share_mode(checkpoint),
                 )
             ).to(device)
+        else:
+            BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
+            DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
+            if use_fmem:
+                FMEMLayer = nn.DataParallel(
+                    CrossMambaEnhanceModule(
+                        dim=64,
+                        share_mamba=infer_cmem_share_mamba(checkpoint),
+                    )
+                ).to(device)
 
         Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
         Decoder.load_state_dict(checkpoint['DIDF_Decoder'], strict=False)
-        BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
-        DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
-        if use_fmem:
-            FMEMLayer.load_state_dict(checkpoint['FMEMLayer'])
+        if use_new_fusion:
+            ModalEnhanceLayer.load_state_dict(checkpoint['ModalEnhanceLayer'])
+            CrossMambaFusionLayer.load_state_dict(checkpoint['CrossMambaFusionLayer'])
+        else:
+            BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
+            DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
+            if use_fmem:
+                FMEMLayer.load_state_dict(checkpoint['FMEMLayer'])
         Encoder.eval()
         Decoder.eval()
-        BaseFuseLayer.eval()
-        DetailFuseLayer.eval()
-        if use_fmem:
-            FMEMLayer.eval()
-
+        if use_new_fusion:
+            ModalEnhanceLayer.eval()
+            CrossMambaFusionLayer.eval()
+        else:
+            BaseFuseLayer.eval()
+            DetailFuseLayer.eval()
+            if use_fmem:
+                FMEMLayer.eval()
         with torch.no_grad():
             for img_name in image_names:
 
@@ -172,21 +200,38 @@ def main():
 
                 feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
                 feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
-                feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
-                feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
-                if use_fmem:
-                    feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
-                    data_Fuse, out_enc_level0 = Decoder(data_VIS, fused_feature=feature_F_E)
+                if use_new_fusion:
+                    feature_V_E = ModalEnhanceLayer(feature_V_B, feature_V_D)
+                    feature_I_E = ModalEnhanceLayer(feature_I_B, feature_I_D)
+                    feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
+                    decoder_input = get_decoder_residual_input(
+                        checkpoint.get('decoder_residual', 'none'), data_IR, data_VIS)
+                    data_Fuse, out_enc_level0 = Decoder(decoder_input, fused_feature=feature_F_E)
+                    feature_vis = {
+                        "feature_V_H": feature_V_D,
+                        "feature_I_H": feature_I_D,
+                        "feature_V_L": feature_V_B,
+                        "feature_I_L": feature_I_B,
+                        "feature_V_E": feature_V_E,
+                        "feature_I_E": feature_I_E,
+                        "out_enc_level0": out_enc_level0,
+                    }
                 else:
-                    data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_B, feature_F_D)
-                # data_Fuse, _ = Decoder(None, feature_F_B, feature_F_D)
-                save_feature_visualizations({
-                    "feature_V_D": feature_V_D,
-                    "feature_I_D": feature_I_D,
-                    "feature_V_B": feature_V_B,
-                    "feature_I_B": feature_I_B,
-                    "out_enc_level0": out_enc_level0,
-                }, img_name, feature_vis_folder, max_channels=args.feature_channels)
+                    feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
+                    feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
+                    if use_fmem:
+                        feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
+                        data_Fuse, out_enc_level0 = Decoder(data_VIS, fused_feature=feature_F_E)
+                    else:
+                        data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_B, feature_F_D)
+                    feature_vis = {
+                        "feature_V_D": feature_V_D,
+                        "feature_I_D": feature_I_D,
+                        "feature_V_B": feature_V_B,
+                        "feature_I_B": feature_I_B,
+                        "out_enc_level0": out_enc_level0,
+                    }
+                save_feature_visualizations(feature_vis, img_name, feature_vis_folder, max_channels=args.feature_channels)
                 data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
                 fi = np.uint8(np.round(np.squeeze((data_Fuse * 255).cpu().numpy())))
                 img_save(fi, os.path.splitext(img_name)[0], test_out_folder)

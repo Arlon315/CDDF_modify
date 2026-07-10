@@ -192,7 +192,7 @@ def get_project_defaults() -> Mapping[str, object]:
             },
         },
         "default_dataset": "MSRS-main",
-        "default_model_path": "models/MCAM_HTB/restormer_htb_cga_windowMCAM_06-01-04-48_epoch_060.pth",
+        "default_model_path": "models/newStructure/_spatial_mamba_INN_AKDEConv_htb_lowhigh_crossmamba_independent_latest.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,

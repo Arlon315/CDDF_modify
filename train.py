@@ -8,20 +8,20 @@ Import packages
 
 from net import (
     build_cddfuse_modules,
-    fuse_base_features,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
     infer_cddfuse_encoder_base_feature,
     infer_cddfuse_encoder_detail_feature,
-    infer_cddfuse_detail_fusion,
     resolve_cddfuse_encoder_base_feature,
     resolve_cddfuse_encoder_detail_feature,
     resolve_cddfuse_decoder_block,
 )
-from CMEM import CrossMambaEnhanceModule
+from CrossMambaFusion import (
+    CrossMambaFusionBlock,
+    IntraModalEnhanceBlock,
+    get_decoder_residual_input,
+    infer_cross_mamba_share_mode,
+)
 from utils.dataset import H5Dataset
 import argparse
 import os
@@ -82,7 +82,7 @@ parser.add_argument(
     default="auto",
     help="full strictly resumes all modules; pretrain loads Phase I weights and starts Phase II; auto chooses by checkpoint structure.",
 )
-parser.add_argument("--checkpoint_dir", type=str, default="models/GMEM+AKDEConv+CMEM/", help="Directory for saved checkpoints.")
+parser.add_argument("--checkpoint_dir", type=str, default="models/newStructure/", help="Directory for saved checkpoints.")
 parser.add_argument("--save_interval", type=int, default=10, help="Save a checkpoint every N epochs.")
 parser.add_argument(
     "--backbone",
@@ -126,6 +126,30 @@ parser.add_argument(
     default="independent",
     help="GMEM direction parameter sharing: independent, axis, or all.",
 )
+parser.add_argument(
+    "--cross_mamba_share_mode",
+    choices=("independent", "axis", "all"),
+    default="independent",
+    help="Cross-Mamba direction parameter sharing for the new low/high fusion path.",
+)
+parser.add_argument(
+    "--skip_phase1",
+    action="store_true",
+    default=True,
+    help="Skip the single-modality reconstruction phase and train fusion from epoch 0.",
+)
+parser.add_argument(
+    "--use_decomp_loss",
+    action="store_true",
+    default=False,
+    help="Enable the original low/high correlation decomposition loss.",
+)
+parser.add_argument(
+    "--decoder_residual",
+    choices=("none", "ir", "vis", "ir+vis"),
+    default="none",
+    help="Residual image passed to the decoder in the fusion phase.",
+)
 
 args = parser.parse_args()
 encoder_base_feature = resolve_cddfuse_encoder_base_feature(args.encoder_base_feature, args.backbone)
@@ -134,12 +158,14 @@ decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
 encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
 encoder_detail_suffix = f"_{encoder_detail_feature.replace('+', '_')}"
-base_fusion_suffix = (
-    f"_gmem_{args.gmem_share_mode}"
-    if args.base_fusion == "gmem"
-    else ("" if args.base_fusion == "base" else f"_{args.base_fusion}")
+phase_suffix = "_skipP1" if args.skip_phase1 else ""
+decomp_suffix = "_decomp" if args.use_decomp_loss else ""
+residual_suffix = "" if args.decoder_residual == "none" else f"_res{args.decoder_residual.replace('+', '_')}"
+model_str = (
+    f"{encoder_base_suffix}{encoder_detail_suffix}{decoder_block_suffix}"
+    f"_lowhigh_crossmamba_{args.cross_mamba_share_mode}"
+    f"{phase_suffix}{decomp_suffix}{residual_suffix}"
 )
-model_str = f"{encoder_base_suffix}{encoder_detail_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}_GMEM"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -163,7 +189,7 @@ optim_gamma = 0.5
 
 # Model
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
+encoder_module, decoder_module, _, _ = build_cddfuse_modules(
     args.backbone,
     detail_fusion=args.detail_fusion,
     encoder_base_feature=encoder_base_feature,
@@ -174,10 +200,11 @@ encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cdd
 )
 DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
-BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
-DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
-FMEMLayer = nn.DataParallel(
-    CrossMambaEnhanceModule(dim=64, share_mamba=False)
+ModalEnhanceLayer = nn.DataParallel(
+    IntraModalEnhanceBlock(dim=64)
+).to(device)
+CrossMambaFusionLayer = nn.DataParallel(
+    CrossMambaFusionBlock(dim=64, share_mode=args.cross_mamba_share_mode)
 ).to(device)
 
 # optimizer, scheduler and loss function
@@ -186,18 +213,14 @@ optimizer1 = torch.optim.Adam(
 optimizer2 = torch.optim.Adam(
     DIDF_Decoder.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer3 = torch.optim.Adam(
-    BaseFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
+    ModalEnhanceLayer.parameters(), lr=lr, weight_decay=weight_decay)
 optimizer4 = torch.optim.Adam(
-    DetailFuseLayer.parameters(), lr=lr, weight_decay=weight_decay)
-optimizer5 = torch.optim.Adam(
-    FMEMLayer.parameters(), lr=lr, weight_decay=weight_decay)
+    CrossMambaFusionLayer.parameters(), lr=lr, weight_decay=weight_decay)
 
 scheduler1 = torch.optim.lr_scheduler.StepLR(optimizer1, step_size=optim_step, gamma=optim_gamma)
 scheduler2 = torch.optim.lr_scheduler.StepLR(optimizer2, step_size=optim_step, gamma=optim_gamma)
 scheduler3 = torch.optim.lr_scheduler.StepLR(optimizer3, step_size=optim_step, gamma=optim_gamma)
 scheduler4 = torch.optim.lr_scheduler.StepLR(optimizer4, step_size=optim_step, gamma=optim_gamma)
-scheduler5 = torch.optim.lr_scheduler.StepLR(optimizer5, step_size=optim_step, gamma=optim_gamma)
-
 MSELoss = nn.MSELoss()  
 L1Loss = nn.L1Loss()
 Loss_ssim = kornia.losses.SSIMLoss(11, reduction='mean')
@@ -222,9 +245,7 @@ os.makedirs(args.checkpoint_dir, exist_ok=True)
 
 
 def get_detail_fusion_num_layers():
-    module = DetailFuseLayer.module if isinstance(DetailFuseLayer, nn.DataParallel) else DetailFuseLayer
-    net = getattr(module, 'net', None)
-    return len(net) if net is not None else None
+    return None
 
 
 def build_checkpoint(epoch):
@@ -232,6 +253,11 @@ def build_checkpoint(epoch):
         'epoch': epoch,
         'seed': seed,
         'timestamp': timestamp,
+        'fusion_structure': 'low_high_cross_mamba',
+        'cross_mamba_share_mode': args.cross_mamba_share_mode,
+        'skip_phase1': bool(args.skip_phase1),
+        'use_decomp_loss': bool(args.use_decomp_loss),
+        'decoder_residual': args.decoder_residual,
         'backbone': args.backbone,
         'encoder_base_feature': encoder_base_feature,
         'encoder_detail_feature': encoder_detail_feature,
@@ -243,25 +269,20 @@ def build_checkpoint(epoch):
         'encoder_detail_enhance_layers': 2 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0,
         'encoder_detail_num_layers': 1 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 3,
         'decoder_freq_enhance': 'dynamic_filter',
-        'cmem_share_mamba': False,
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
         'DIDF_Encoder': DIDF_Encoder.state_dict(),
         'DIDF_Decoder': DIDF_Decoder.state_dict(),
-        'BaseFuseLayer': BaseFuseLayer.state_dict(),
-        'DetailFuseLayer': DetailFuseLayer.state_dict(),
-        'FMEMLayer': FMEMLayer.state_dict(),
+        'ModalEnhanceLayer': ModalEnhanceLayer.state_dict(),
+        'CrossMambaFusionLayer': CrossMambaFusionLayer.state_dict(),
         'optimizer1': optimizer1.state_dict(),
         'optimizer2': optimizer2.state_dict(),
         'optimizer3': optimizer3.state_dict(),
         'optimizer4': optimizer4.state_dict(),
-        'optimizer5': optimizer5.state_dict(),
         'scheduler1': scheduler1.state_dict(),
         'scheduler2': scheduler2.state_dict(),
         'scheduler3': scheduler3.state_dict(),
         'scheduler4': scheduler4.state_dict(),
-        'scheduler5': scheduler5.state_dict(),
     }
-
 
 def save_checkpoint(epoch, save_tag=None):
     checkpoint = build_checkpoint(epoch)
@@ -362,22 +383,19 @@ if args.resume:
         raise ValueError(
             f"Checkpoint backbone is '{checkpoint_backbone}', but current --backbone is '{args.backbone}'."
         )
+
     checkpoint_decoder_block = infer_cddfuse_decoder_block(checkpoint, checkpoint_backbone)
     checkpoint_encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
     checkpoint_encoder_detail_feature = infer_cddfuse_encoder_detail_feature(checkpoint)
-    checkpoint_detail_fusion = infer_cddfuse_detail_fusion(checkpoint)
-    checkpoint_base_fusion = infer_cddfuse_base_fusion(checkpoint)
-    checkpoint_gmem_share_mode = infer_cddfuse_gmem_share_mode(checkpoint)
+    checkpoint_cross_mamba_share_mode = infer_cross_mamba_share_mode(checkpoint)
+    checkpoint_fusion_structure = checkpoint.get('fusion_structure') if isinstance(checkpoint, dict) else None
+
     decoder_block_matches = checkpoint_decoder_block == decoder_block
     encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
     encoder_detail_feature_matches = checkpoint_encoder_detail_feature == encoder_detail_feature
-    detail_fusion_matches = checkpoint_detail_fusion == args.detail_fusion
-    gmem_share_mode_matches = (
-        checkpoint_base_fusion != 'gmem'
-        or args.base_fusion != 'gmem'
-        or checkpoint_gmem_share_mode == args.gmem_share_mode
-    )
-    base_fusion_matches = checkpoint_base_fusion == args.base_fusion and gmem_share_mode_matches
+    fusion_structure_matches = checkpoint_fusion_structure == 'low_high_cross_mamba'
+    cross_mamba_share_mode_matches = checkpoint_cross_mamba_share_mode == args.cross_mamba_share_mode
+
     resume_mode = args.resume_mode
     if resume_mode == "auto":
         resume_mode = (
@@ -386,8 +404,8 @@ if args.resume:
                 decoder_block_matches
                 and encoder_base_feature_matches
                 and encoder_detail_feature_matches
-                and detail_fusion_matches
-                and base_fusion_matches
+                and fusion_structure_matches
+                and cross_mamba_share_mode_matches
             )
             else "pretrain"
         )
@@ -408,108 +426,91 @@ if args.resume:
                 f"Checkpoint decoder_block is '{checkpoint_decoder_block}', "
                 f"but current --decoder_block resolves to '{decoder_block}'."
             )
-        if not detail_fusion_matches:
+        if not fusion_structure_matches:
             raise ValueError(
-                f"Checkpoint detail_fusion is '{checkpoint_detail_fusion}', "
-                f"but current --detail_fusion is '{args.detail_fusion}'."
+                f"Checkpoint fusion_structure is '{checkpoint_fusion_structure}', "
+                "but current training expects 'low_high_cross_mamba'."
             )
-        if not gmem_share_mode_matches:
+        if not cross_mamba_share_mode_matches:
             raise ValueError(
-                f"Checkpoint gmem_share_mode is '{checkpoint_gmem_share_mode}', "
-                f"but current --gmem_share_mode is '{args.gmem_share_mode}'."
-            )
-        if not base_fusion_matches:
-            raise ValueError(
-                f"Checkpoint base_fusion is '{checkpoint_base_fusion}', "
-                f"but current --base_fusion is '{args.base_fusion}'."
+                f"Checkpoint cross_mamba_share_mode is '{checkpoint_cross_mamba_share_mode}', "
+                f"but current --cross_mamba_share_mode is '{args.cross_mamba_share_mode}'."
             )
 
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
-    load_state_if_present(FMEMLayer, checkpoint, 'FMEMLayer', required=False)
+    load_state_if_present(ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
+    load_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
     if resume_mode == "full":
-        load_state_if_present(BaseFuseLayer, checkpoint, 'BaseFuseLayer')
-        load_state_if_present(DetailFuseLayer, checkpoint, 'DetailFuseLayer')
         load_optimizer_if_present(optimizer1, checkpoint, 'optimizer1')
         load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
         load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
         load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
-        load_optimizer_if_present(optimizer5, checkpoint, 'optimizer5')
         load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
         load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
         load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
-        load_scheduler_if_present(scheduler5, checkpoint, 'scheduler5')
         start_epoch = checkpoint_epoch
         print(f"Resumed full checkpoint from {resume_path} at epoch {start_epoch}.")
     else:
         skipped_resume_parts = []
         if not encoder_base_feature_matches:
-            skipped_resume_parts.append('DIDF_Encoder baseFeature weights/optimizer1/scheduler1')
+            skipped_resume_parts.append('DIDF_Encoder base branch optimizer/scheduler')
             print(
                 f"Partially loaded DIDF_Encoder: checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
                 f"current encoder_base_feature='{encoder_base_feature}'."
             )
         if not encoder_detail_feature_matches:
-            skipped_resume_parts.append('DIDF_Encoder detailFeature/detailEnhance weights/optimizer1/scheduler1')
+            skipped_resume_parts.append('DIDF_Encoder high branch optimizer/scheduler')
             print(
                 f"Partially loaded DIDF_Encoder: checkpoint encoder_detail_feature="
                 f"'{checkpoint_encoder_detail_feature}', current encoder_detail_feature="
                 f"'{encoder_detail_feature}'."
             )
         if not decoder_block_matches:
-            skipped_resume_parts.append('DIDF_Decoder block weights/optimizer2/scheduler2')
+            skipped_resume_parts.append('DIDF_Decoder optimizer/scheduler')
             print(
                 f"Partially loaded DIDF_Decoder: checkpoint decoder_block='{checkpoint_decoder_block}', "
                 f"current decoder_block='{decoder_block}'."
             )
-        if base_fusion_matches:
-            load_state_if_present(BaseFuseLayer, checkpoint, 'BaseFuseLayer', required=False)
-            skipped_resume_parts.append('optimizer3/scheduler3')
-        else:
-            skipped_resume_parts.append('BaseFuseLayer/optimizer3/scheduler3')
+        if not fusion_structure_matches:
+            skipped_resume_parts.append('ModalEnhanceLayer/CrossMambaFusionLayer')
             print(
-                f"Skipped BaseFuseLayer: checkpoint base_fusion='{checkpoint_base_fusion}', "
-                f"current base_fusion='{args.base_fusion}'."
+                f"Skipped new fusion layers: checkpoint fusion_structure='{checkpoint_fusion_structure}'."
             )
-        if detail_fusion_matches:
-            load_state_if_present(DetailFuseLayer, checkpoint, 'DetailFuseLayer', required=False)
-        else:
-            skipped_resume_parts.append('DetailFuseLayer/optimizer4/scheduler4')
+        elif not cross_mamba_share_mode_matches:
+            skipped_resume_parts.append('CrossMambaFusionLayer optimizer/scheduler')
             print(
-                f"Skipped DetailFuseLayer: checkpoint detail_fusion='{checkpoint_detail_fusion}', "
-                f"current detail_fusion='{args.detail_fusion}'."
+                f"Partially loaded fusion layers: checkpoint cross_mamba_share_mode="
+                f"'{checkpoint_cross_mamba_share_mode}', current='{args.cross_mamba_share_mode}'."
             )
+
         if encoder_base_feature_matches and encoder_detail_feature_matches:
             load_optimizer_if_present(optimizer1, checkpoint, 'optimizer1')
             load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         if decoder_block_matches:
             load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
             load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
-        if detail_fusion_matches:
+        if 'ModalEnhanceLayer' in checkpoint:
+            load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
+            load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
+        if 'CrossMambaFusionLayer' in checkpoint and cross_mamba_share_mode_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
             load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
-        if 'FMEMLayer' in checkpoint:
-            load_optimizer_if_present(optimizer5, checkpoint, 'optimizer5')
-            load_scheduler_if_present(scheduler5, checkpoint, 'scheduler5')
-        else:
-            skipped_resume_parts.append('FMEMLayer/optimizer5/scheduler5')
-        start_epoch = max(checkpoint_epoch, epoch_gap)
-        skipped_message = ', '.join(skipped_resume_parts)
+
+        start_epoch = checkpoint_epoch if args.skip_phase1 else max(checkpoint_epoch, epoch_gap)
+        skipped_message = ', '.join(skipped_resume_parts) if skipped_resume_parts else 'no incompatible parts'
         print(
-            f"Loaded Phase I pretrain from {resume_path}: "
+            f"Loaded pretrain from {resume_path}: "
             f"checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
             f"current encoder_base_feature='{encoder_base_feature}'; "
             f"checkpoint encoder_detail_feature='{checkpoint_encoder_detail_feature}', "
             f"current encoder_detail_feature='{encoder_detail_feature}'; "
-            f"checkpoint decoder_block='{checkpoint_decoder_block}', current decoder_block='{decoder_block}'; "
-            f"checkpoint detail_fusion='{checkpoint_detail_fusion}', current detail_fusion='{args.detail_fusion}'; "
-            f"checkpoint base_fusion='{checkpoint_base_fusion}', current base_fusion='{args.base_fusion}'. "
+            f"checkpoint decoder_block='{checkpoint_decoder_block}', current decoder_block='{decoder_block}'. "
             f"Skipped {skipped_message}; starting at epoch {start_epoch}."
         )
-
 '''
 ------------------------------------------------------------------------------
 Train
@@ -527,39 +528,42 @@ for epoch in range(start_epoch, num_epochs):
         data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
         DIDF_Encoder.train()
         DIDF_Decoder.train()
-        BaseFuseLayer.train()
-        DetailFuseLayer.train()
-        FMEMLayer.train()
+        ModalEnhanceLayer.train()
+        CrossMambaFusionLayer.train()
 
         DIDF_Encoder.zero_grad()
         DIDF_Decoder.zero_grad()
-        BaseFuseLayer.zero_grad()
-        DetailFuseLayer.zero_grad()
-        FMEMLayer.zero_grad()
+        ModalEnhanceLayer.zero_grad()
+        CrossMambaFusionLayer.zero_grad()
 
         optimizer1.zero_grad()
         optimizer2.zero_grad()
         optimizer3.zero_grad()
         optimizer4.zero_grad()
-        optimizer5.zero_grad()
 
-        if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _ = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, _ = DIDF_Encoder(data_IR)
-            feature_V_E = FMEMLayer(feature_V_D, feature_V_B)
-            feature_I_E = FMEMLayer(feature_I_D, feature_I_B)
+        run_phase1 = (not args.skip_phase1) and epoch < epoch_gap
+        if run_phase1:
+            feature_V_L, feature_V_H, _ = DIDF_Encoder(data_VIS)
+            feature_I_L, feature_I_H, _ = DIDF_Encoder(data_IR)
+            feature_V_E = ModalEnhanceLayer(feature_V_L, feature_V_H)
+            feature_I_E = ModalEnhanceLayer(feature_I_L, feature_I_H)
             data_VIS_hat, _ = DIDF_Decoder(data_VIS, fused_feature=feature_V_E)
             data_IR_hat, _ = DIDF_Decoder(data_IR, fused_feature=feature_I_E)
 
-            cc_loss_B = cc(feature_V_B, feature_I_B)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
             mse_loss_V = 5 * Loss_ssim(data_VIS, data_VIS_hat) + MSELoss(data_VIS, data_VIS_hat)
             mse_loss_I = 5 * Loss_ssim(data_IR, data_IR_hat) + MSELoss(data_IR, data_IR_hat)
+            Gradient_loss = 0.5 * (
+                L1Loss(kornia.filters.SpatialGradient()(data_VIS),
+                       kornia.filters.SpatialGradient()(data_VIS_hat))
+                + L1Loss(kornia.filters.SpatialGradient()(data_IR),
+                         kornia.filters.SpatialGradient()(data_IR_hat))
+            )
 
-            Gradient_loss = L1Loss(kornia.filters.SpatialGradient()(data_VIS),
-                                   kornia.filters.SpatialGradient()(data_VIS_hat))
-
-            loss_decomp =  (cc_loss_D) ** 2/ (1.01 + cc_loss_B)  
+            loss_decomp = torch.tensor(0.0, device=device)
+            if args.use_decomp_loss:
+                cc_loss_L = cc(feature_V_L, feature_I_L)
+                cc_loss_H = cc(feature_V_H, feature_I_H)
+                loss_decomp = (cc_loss_H) ** 2 / (1.01 + cc_loss_L)
 
             loss = coeff_mse_loss_VF * mse_loss_V + coeff_mse_loss_IF * \
                    mse_loss_I + coeff_decomp * loss_decomp + coeff_tv * Gradient_loss
@@ -570,28 +574,27 @@ for epoch in range(start_epoch, num_epochs):
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
-                FMEMLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
-            optimizer1.step()  
+                ModalEnhanceLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            optimizer1.step()
             optimizer2.step()
-            optimizer5.step()
-        else:  #Phase II
-            feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
-            feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
-            feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
-            feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
-            data_Fuse, feature_F = DIDF_Decoder(data_VIS, fused_feature=feature_F_E)
+            optimizer3.step()
+        else:
+            feature_V_L, feature_V_H, _ = DIDF_Encoder(data_VIS)
+            feature_I_L, feature_I_H, _ = DIDF_Encoder(data_IR)
+            feature_V_E = ModalEnhanceLayer(feature_V_L, feature_V_H)
+            feature_I_E = ModalEnhanceLayer(feature_I_L, feature_I_H)
+            feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
+            decoder_input = get_decoder_residual_input(args.decoder_residual, data_IR, data_VIS)
+            data_Fuse, feature_F = DIDF_Decoder(decoder_input, fused_feature=feature_F_E)
 
-            
-            mse_loss_V = 5*Loss_ssim(data_VIS, data_Fuse) + MSELoss(data_VIS, data_Fuse)
-            mse_loss_I = 5*Loss_ssim(data_IR,  data_Fuse) + MSELoss(data_IR,  data_Fuse)
-
-            cc_loss_B = cc(feature_V_B, feature_I_B)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
-            loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
-            fusionloss, _,_ ,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
+            fusionloss, _, _, _ = criteria_fusion(data_VIS, data_IR, data_Fuse)
             pixel_bscl_loss = criteria_pixel_bscl(data_VIS, data_IR, data_Fuse)
-            
+            loss_decomp = torch.tensor(0.0, device=device)
+            if args.use_decomp_loss:
+                cc_loss_L = cc(feature_V_L, feature_I_L)
+                cc_loss_H = cc(feature_V_H, feature_I_H)
+                loss_decomp = (cc_loss_H) ** 2 / (1.01 + cc_loss_L)
+
             loss = fusionloss + coeff_decomp * loss_decomp + coeff_pixel_bscl * pixel_bscl_loss
             loss.backward()
             nn.utils.clip_grad_norm_(
@@ -599,17 +602,13 @@ for epoch in range(start_epoch, num_epochs):
             nn.utils.clip_grad_norm_(
                 DIDF_Decoder.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
-                BaseFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+                ModalEnhanceLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
             nn.utils.clip_grad_norm_(
-                DetailFuseLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
-            nn.utils.clip_grad_norm_(
-                FMEMLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
-            optimizer1.step()  
+                CrossMambaFusionLayer.parameters(), max_norm=clip_grad_norm_value, norm_type=2)
+            optimizer1.step()
             optimizer2.step()
             optimizer3.step()
             optimizer4.step()
-            optimizer5.step()
-
         loss_value = loss.item()
         epoch_loss += loss_value
 
@@ -635,11 +634,10 @@ for epoch in range(start_epoch, num_epochs):
 
     # adjust the learning rate
 
-    scheduler1.step()  
+    scheduler1.step()
     scheduler2.step()
-    scheduler5.step()
-    if not epoch < epoch_gap:
-        scheduler3.step()
+    scheduler3.step()
+    if args.skip_phase1 or epoch >= epoch_gap:
         scheduler4.step()
 
     if optimizer1.param_groups[0]['lr'] <= 1e-6:
@@ -650,9 +648,6 @@ for epoch in range(start_epoch, num_epochs):
         optimizer3.param_groups[0]['lr'] = 1e-6
     if optimizer4.param_groups[0]['lr'] <= 1e-6:
         optimizer4.param_groups[0]['lr'] = 1e-6
-    if optimizer5.param_groups[0]['lr'] <= 1e-6:
-        optimizer5.param_groups[0]['lr'] = 1e-6
-
     finished_epoch = epoch + 1
     if args.save_interval > 0 and finished_epoch % args.save_interval == 0:
         save_checkpoint(finished_epoch)
