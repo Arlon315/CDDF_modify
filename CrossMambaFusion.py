@@ -93,6 +93,6 @@ class CrossMambaFusionBlock(nn.Module):
         )
         p_ir = self.ir_private(ir_feature)
         p_vi = self.vi_private(vi_feature)
-        ir_enhanced = ir_feature + ir_cross + p_ir
-        vi_enhanced = vi_feature + vi_cross + p_vi
+        ir_enhanced = ir_cross + p_ir
+        vi_enhanced = vi_cross + p_vi
         return self.fusion_proj(torch.cat((ir_enhanced, vi_enhanced), dim=1))
