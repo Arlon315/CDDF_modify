@@ -173,7 +173,7 @@ def main():
         Decoder.load_state_dict(checkpoint['DIDF_Decoder'], strict=False)
         if use_new_fusion:
             ModalEnhanceLayer.load_state_dict(checkpoint['ModalEnhanceLayer'])
-            CrossMambaFusionLayer.load_state_dict(checkpoint['CrossMambaFusionLayer'])
+            CrossMambaFusionLayer.load_state_dict(checkpoint['CrossMambaFusionLayer'], strict=False)
         else:
             BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
             DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])

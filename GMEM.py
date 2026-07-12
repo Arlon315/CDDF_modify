@@ -240,6 +240,7 @@ class GlobalMamba4Path(nn.Module):
         else:
             self.block = CommonZMambaSeqBlock(dim=dim)
 
+
     def _get_blocks(self):
         if self.share_mode == 'independent':
             return self.blocks[0], self.blocks[1], self.blocks[2], self.blocks[3]
@@ -319,8 +320,8 @@ class GlobalMamba4Path(nn.Module):
         vi_v_rev = self._v_seq_to_img(
             vi_v_rev, batch, channels, height, width)
 
-        ir_long = (ir_h_fwd + ir_h_rev + ir_v_fwd + ir_v_rev) / 4.0
-        vi_long = (vi_h_fwd + vi_h_rev + vi_v_fwd + vi_v_rev) / 4.0
+        ir_long = (ir_h_fwd + ir_h_rev + ir_v_fwd + ir_v_rev)
+        vi_long = (vi_h_fwd + vi_h_rev + vi_v_fwd + vi_v_rev)
         return ir_long, vi_long
 
 

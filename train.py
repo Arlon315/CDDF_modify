@@ -17,6 +17,7 @@ from net import (
     resolve_cddfuse_decoder_block,
 )
 from CrossMambaFusion import (
+    CROSS_MAMBA_FUSION_STRUCTURE,
     CrossMambaFusionBlock,
     IntraModalEnhanceBlock,
     get_decoder_residual_input,
@@ -163,7 +164,7 @@ decomp_suffix = "_decomp" if args.use_decomp_loss else ""
 residual_suffix = "" if args.decoder_residual == "none" else f"_res{args.decoder_residual.replace('+', '_')}"
 model_str = (
     f"{encoder_base_suffix}{encoder_detail_suffix}{decoder_block_suffix}"
-    f"_lowhigh_crossmamba_{args.cross_mamba_share_mode}"
+    f"_lowhigh_crossmamba_privateakc_{args.cross_mamba_share_mode}"
     f"{phase_suffix}{decomp_suffix}{residual_suffix}"
 )
 
@@ -253,7 +254,7 @@ def build_checkpoint(epoch):
         'epoch': epoch,
         'seed': seed,
         'timestamp': timestamp,
-        'fusion_structure': 'low_high_cross_mamba',
+        'fusion_structure': CROSS_MAMBA_FUSION_STRUCTURE,
         'cross_mamba_share_mode': args.cross_mamba_share_mode,
         'skip_phase1': bool(args.skip_phase1),
         'use_decomp_loss': bool(args.use_decomp_loss),
@@ -393,7 +394,7 @@ if args.resume:
     decoder_block_matches = checkpoint_decoder_block == decoder_block
     encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
     encoder_detail_feature_matches = checkpoint_encoder_detail_feature == encoder_detail_feature
-    fusion_structure_matches = checkpoint_fusion_structure == 'low_high_cross_mamba'
+    fusion_structure_matches = checkpoint_fusion_structure == CROSS_MAMBA_FUSION_STRUCTURE
     cross_mamba_share_mode_matches = checkpoint_cross_mamba_share_mode == args.cross_mamba_share_mode
 
     resume_mode = args.resume_mode
@@ -429,7 +430,7 @@ if args.resume:
         if not fusion_structure_matches:
             raise ValueError(
                 f"Checkpoint fusion_structure is '{checkpoint_fusion_structure}', "
-                "but current training expects 'low_high_cross_mamba'."
+                f"but current training expects '{CROSS_MAMBA_FUSION_STRUCTURE}'."
             )
         if not cross_mamba_share_mode_matches:
             raise ValueError(
@@ -440,7 +441,7 @@ if args.resume:
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
     load_state_if_present(ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
-    load_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
+    load_compatible_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
     if resume_mode == "full":
@@ -496,7 +497,7 @@ if args.resume:
         if 'ModalEnhanceLayer' in checkpoint:
             load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
             load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
-        if 'CrossMambaFusionLayer' in checkpoint and cross_mamba_share_mode_matches:
+        if 'CrossMambaFusionLayer' in checkpoint and fusion_structure_matches and cross_mamba_share_mode_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
             load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
 

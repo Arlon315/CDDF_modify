@@ -125,7 +125,7 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
     decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
     if use_new_fusion:
         modal_enhance.load_state_dict(_strip_module_prefix(checkpoint["ModalEnhanceLayer"]))
-        cross_mamba_fusion.load_state_dict(_strip_module_prefix(checkpoint["CrossMambaFusionLayer"]))
+        cross_mamba_fusion.load_state_dict(_strip_module_prefix(checkpoint["CrossMambaFusionLayer"]), strict=False)
     else:
         base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
         detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))

@@ -98,7 +98,7 @@ class SpatialMamba4Path(nn.Module):
         v_fwd = self._v_seq_to_img(v_fwd, B, C, H, W)
         v_rev = self._v_seq_to_img(v_rev, B, C, H, W)
 
-        out = (h_fwd + h_rev + v_fwd + v_rev) / 4.0
+        out = h_fwd + h_rev + v_fwd + v_rev
         out = self.proj(out)
         return out
 

@@ -3,12 +3,21 @@ import torch.nn as nn
 
 from GMEM import GlobalMamba4Path
 from SpatialMamba import LayerNorm
+from net import AKCBlock
+
+
+CROSS_MAMBA_FUSION_STRUCTURE = 'low_high_cross_mamba_private_akc'
+LEGACY_CROSS_MAMBA_FUSION_STRUCTURES = ('low_high_cross_mamba',)
 
 
 def is_cross_mamba_fusion_checkpoint(checkpoint):
     if not isinstance(checkpoint, dict):
         return False
-    return checkpoint.get('fusion_structure') == 'low_high_cross_mamba' or (
+    fusion_structure = checkpoint.get('fusion_structure')
+    return fusion_structure in (
+        CROSS_MAMBA_FUSION_STRUCTURE,
+        *LEGACY_CROSS_MAMBA_FUSION_STRUCTURES,
+    ) or (
         'ModalEnhanceLayer' in checkpoint and 'CrossMambaFusionLayer' in checkpoint
     )
 
@@ -57,6 +66,8 @@ class CrossMambaFusionBlock(nn.Module):
             share_mode=share_mode,
             use_checkpoint=use_checkpoint,
         )
+        self.ir_private = AKCBlock(dim)
+        self.vi_private = AKCBlock(dim)
         self.fusion_proj = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=True)
         self._init_fusion_sum(dim)
 
@@ -80,6 +91,8 @@ class CrossMambaFusionBlock(nn.Module):
             self.ir_norm(ir_feature),
             self.vi_norm(vi_feature),
         )
-        ir_enhanced = ir_feature + ir_cross
-        vi_enhanced = vi_feature + vi_cross
+        p_ir = self.ir_private(ir_feature)
+        p_vi = self.vi_private(vi_feature)
+        ir_enhanced = ir_feature + ir_cross + p_ir
+        vi_enhanced = vi_feature + vi_cross + p_vi
         return self.fusion_proj(torch.cat((ir_enhanced, vi_enhanced), dim=1))
