@@ -1132,6 +1132,8 @@ def resolve_cddfuse_encoder_detail_feature(encoder_detail_feature=None):
         return 'INN+DEConv'
     if encoder_detail_feature in ('inn+akdeconv', 'inn_akdeconv'):
         return 'INN+AKDEConv'
+    if encoder_detail_feature in ('akde_cga', 'akdecga', 'akdeconv_cga', 'akdeconv+cga'):
+        return 'AKDEConv+CGA'
     raise ValueError(f"Unsupported encoder_detail_feature: {encoder_detail_feature}")
 
 
@@ -1158,7 +1160,6 @@ class Restormer_Encoder(nn.Module):
         self.encoder_level1 = nn.Sequential(*make_feature_blocks(
             block_type, dim, num_blocks[0], heads[0], ffn_expansion_factor, bias, LayerNorm_type))
         encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
-        detail_num_layers = 3 if encoder_detail_feature == 'INN' else 1
         if str(block_type).lower() == 'naf':
             self.baseFeature = NAFBlock(dim=dim)
         else:
@@ -1167,14 +1168,21 @@ class Restormer_Encoder(nn.Module):
                 self.baseFeature = SpatialMambaBaseFeature(dim=dim, num_layers=1, share_mamba=False)
             else:
                 self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
-        self.detailFeature = DetailFeatureExtraction(num_layers=detail_num_layers)
-        detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0
-        self.detail_enhance_residual = encoder_detail_feature == 'INN+AKDEConv' and detail_enhance_layers > 0
-        if detail_enhance_layers > 0:
-            enhance_block = AKDEConv if encoder_detail_feature == 'INN+AKDEConv' else DEConv
-            self.detailEnhance = nn.Sequential(*[enhance_block(dim) for _ in range(detail_enhance_layers)])
-        else:
+        if encoder_detail_feature == 'AKDEConv+CGA':
+            from HighFrequencyCGA import AKDECGAHighFrequencyExtraction
+            self.detailFeature = AKDECGAHighFrequencyExtraction(dim=dim)
+            self.detail_enhance_residual = False
             self.detailEnhance = nn.Identity()
+        else:
+            detail_num_layers = 3 if encoder_detail_feature == 'INN' else 1
+            self.detailFeature = DetailFeatureExtraction(num_layers=detail_num_layers)
+            detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0
+            self.detail_enhance_residual = encoder_detail_feature == 'INN+AKDEConv' and detail_enhance_layers > 0
+            if detail_enhance_layers > 0:
+                enhance_block = AKDEConv if encoder_detail_feature == 'INN+AKDEConv' else DEConv
+                self.detailEnhance = nn.Sequential(*[enhance_block(dim) for _ in range(detail_enhance_layers)])
+            else:
+                self.detailEnhance = nn.Identity()
              
     def forward(self, inp_img):
         inp_enc_level1 = self.patch_embed(inp_img)
@@ -1381,6 +1389,11 @@ def infer_cddfuse_encoder_detail_feature(checkpoint):
 
     encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(encoder_state)
+    if (
+        any(str(key).startswith('detailFeature.akdeconv.') for key in keys)
+        and any(str(key).startswith('detailFeature.cga.') for key in keys)
+    ):
+        return 'AKDEConv+CGA'
     if any(str(key).startswith('detailEnhance.') and '.conv1_6.' in str(key) for key in keys):
         return 'INN+AKDEConv'
     if any(str(key).startswith('detailEnhance.') for key in keys):

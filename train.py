@@ -99,8 +99,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--encoder_detail_feature",
-    choices=("auto", "INN", "INN+DEConv", "INN+AKDEConv"),
-    default="INN+AKDEConv",
+    choices=("auto", "INN", "INN+DEConv", "INN+AKDEConv", "AKDEConv+CGA"),
+    default="AKDEConv+CGA",
     help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes; INN+AKDEConv adds an AKConv detail branch.",
 )
 parser.add_argument(
@@ -266,9 +266,9 @@ def build_checkpoint(epoch):
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
         'gmem_share_mode': args.gmem_share_mode,
-        'encoder_detail_enhance': 'akdeconv' if encoder_detail_feature == 'INN+AKDEConv' else ('deconv' if encoder_detail_feature == 'INN+DEConv' else None),
-        'encoder_detail_enhance_layers': 2 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0,
-        'encoder_detail_num_layers': 1 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 3,
+        'encoder_detail_enhance': 'akdeconv_cga' if encoder_detail_feature == 'AKDEConv+CGA' else ('akdeconv' if encoder_detail_feature == 'INN+AKDEConv' else ('deconv' if encoder_detail_feature == 'INN+DEConv' else None)),
+        'encoder_detail_enhance_layers': 0 if encoder_detail_feature == 'AKDEConv+CGA' else (2 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0),
+        'encoder_detail_num_layers': 0 if encoder_detail_feature == 'AKDEConv+CGA' else (1 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 3),
         'decoder_freq_enhance': 'dynamic_filter',
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
         'DIDF_Encoder': DIDF_Encoder.state_dict(),
