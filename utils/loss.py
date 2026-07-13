@@ -271,8 +271,10 @@ class Sobelxy(nn.Module):
         self.register_buffer("weighty", kernely)
     def forward(self,x):
         x = F.pad(x, (1, 1, 1, 1), mode='replicate')
-        sobelx=F.conv2d(x, self.weightx, padding=0)
-        sobely=F.conv2d(x, self.weighty, padding=0)
+        weightx = self.weightx.to(device=x.device, dtype=x.dtype)
+        weighty = self.weighty.to(device=x.device, dtype=x.dtype)
+        sobelx=F.conv2d(x, weightx, padding=0)
+        sobely=F.conv2d(x, weighty, padding=0)
         return torch.abs(sobelx), torch.abs(sobely)
 
 
