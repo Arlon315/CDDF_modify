@@ -181,10 +181,52 @@ class PixelBSCLLoss(nn.Module):
 
 
 
+class AdaptiveIntensityLoss(nn.Module):
+    def __init__(self, window_size=9, eps=1e-10):
+        super(AdaptiveIntensityLoss, self).__init__()
+        self.window_size = window_size
+        self.eps = eps
+
+    def _local_mse(self, img, target):
+        padding = self.window_size // 2
+        _, _, height, width = img.size()
+        img_patch = F.unfold(img, (self.window_size, self.window_size), padding=padding)
+        target_patch = F.unfold(target, (self.window_size, self.window_size), padding=padding)
+        mse_map = (img_patch - target_patch).pow(2)
+        mse_map = torch.sum(mse_map, dim=1, keepdim=True) / (self.window_size ** 2)
+        return F.fold(mse_map, output_size=(height, width), kernel_size=(1, 1))
+
+    def _gaussian_window(self, channel, device, dtype):
+        coords = torch.arange(self.window_size, device=device, dtype=dtype) - self.window_size // 2
+        gaussian = torch.exp(-(coords ** 2) / (2 * 1.5 ** 2))
+        gaussian = gaussian / gaussian.sum()
+        window = gaussian[:, None].mm(gaussian[None, :]).view(1, 1, self.window_size, self.window_size)
+        return window.expand(channel, 1, self.window_size, self.window_size).contiguous()
+
+    def _local_std(self, img):
+        _, channel, _, _ = img.size()
+        padding = self.window_size // 2
+        window = self._gaussian_window(channel, img.device, img.dtype)
+        mean = F.conv2d(img, window, padding=padding, groups=channel)
+        var = F.conv2d(img * img, window, padding=padding, groups=channel) - mean.pow(2)
+        return torch.sqrt(torch.clamp(var, min=self.eps))
+
+    def forward(self, image_vis, image_ir, generate_img):
+        mse_vis = self._local_mse(image_vis, generate_img)
+        mse_ir = self._local_mse(image_ir, generate_img)
+        std_vis = self._local_std(image_vis)
+        std_ir = self._local_std(image_ir)
+        brightness_vis = torch.mean(image_vis, dim=1, keepdim=True)
+        brightness_ir = torch.mean(image_ir, dim=1, keepdim=True)
+        weight_map = torch.sigmoid((brightness_vis - brightness_ir) + (std_vis - std_ir))
+        return (weight_map * mse_vis + (1 - weight_map) * mse_ir).mean()
+
+
 class Fusionloss(nn.Module):
     def __init__(self):
         super(Fusionloss, self).__init__()
         self.sobelconv=Sobelxy()
+        self.intensity_loss = AdaptiveIntensityLoss()
 
         # 频率损失
         # self.freq_loss = MaxAmpFocalFrequencyLoss(
@@ -200,17 +242,18 @@ class Fusionloss(nn.Module):
 
     def forward(self,image_vis,image_ir,generate_img):
         image_y=image_vis[:,:1,:,:]
-        x_in_max=torch.max(image_y,image_ir)
-        loss_in=F.l1_loss(x_in_max,generate_img)
-        y_grad=self.sobelconv(image_y)
-        ir_grad=self.sobelconv(image_ir)
-        generate_img_grad=self.sobelconv(generate_img)
-        x_grad_joint=torch.max(y_grad,ir_grad)
-        loss_grad=F.l1_loss(x_grad_joint,generate_img_grad)
+        loss_in = 4 * self.intensity_loss(image_y, image_ir, generate_img)
+        y_grad_x, y_grad_y = self.sobelconv(image_y)
+        ir_grad_x, ir_grad_y = self.sobelconv(image_ir)
+        generate_img_grad_x, generate_img_grad_y = self.sobelconv(generate_img)
+        loss_grad = (
+            F.l1_loss(generate_img_grad_x, torch.max(y_grad_x, ir_grad_x)) +
+            F.l1_loss(generate_img_grad_y, torch.max(y_grad_y, ir_grad_y))
+        )
         
         # loss_freq = self.freq_loss(generate_img, image_y, image_ir)
         
-        loss_total=loss_in+10*loss_grad
+        loss_total=2*loss_in+10*loss_grad
         return loss_total,loss_in,loss_grad,None
 
 class Sobelxy(nn.Module):
@@ -224,12 +267,13 @@ class Sobelxy(nn.Module):
                   [-1, -2, -1]]
         kernelx = torch.FloatTensor(kernelx).unsqueeze(0).unsqueeze(0)
         kernely = torch.FloatTensor(kernely).unsqueeze(0).unsqueeze(0)
-        self.weightx = nn.Parameter(data=kernelx, requires_grad=False).cuda()
-        self.weighty = nn.Parameter(data=kernely, requires_grad=False).cuda()
+        self.register_buffer("weightx", kernelx)
+        self.register_buffer("weighty", kernely)
     def forward(self,x):
-        sobelx=F.conv2d(x, self.weightx, padding=1)
-        sobely=F.conv2d(x, self.weighty, padding=1)
-        return torch.abs(sobelx)+torch.abs(sobely)
+        x = F.pad(x, (1, 1, 1, 1), mode='replicate')
+        sobelx=F.conv2d(x, self.weightx, padding=0)
+        sobely=F.conv2d(x, self.weighty, padding=0)
+        return torch.abs(sobelx), torch.abs(sobely)
 
 
 def cc(img1, img2):
