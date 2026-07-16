@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
 from SpatialMamba import LayerNorm
 
@@ -159,6 +160,12 @@ class SSMOnly4Path(nn.Module):
         ])
         self.proj = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
 
+    def _run_mamba(self, mamba, sequence):
+        if self.training and sequence.requires_grad:
+            return checkpoint_fn(
+                mamba, sequence, use_reentrant=False)
+        return mamba(sequence)
+
     def _h_seq_to_img(self, seq, batch, channels, height, width):
         return seq.reshape(
             batch, height, width, channels
@@ -178,10 +185,10 @@ class SSMOnly4Path(nn.Module):
             batch, width * height, channels)
         v_rev = torch.flip(v_fwd, dims=[1])
 
-        h_fwd = self.mambas[0](h_fwd)
-        h_rev = self.mambas[1](h_rev)
-        v_fwd = self.mambas[2](v_fwd)
-        v_rev = self.mambas[3](v_rev)
+        h_fwd = self._run_mamba(self.mambas[0], h_fwd)
+        h_rev = self._run_mamba(self.mambas[1], h_rev)
+        v_fwd = self._run_mamba(self.mambas[2], v_fwd)
+        v_rev = self._run_mamba(self.mambas[3], v_rev)
 
         h_rev = torch.flip(h_rev, dims=[1])
         v_rev = torch.flip(v_rev, dims=[1])
