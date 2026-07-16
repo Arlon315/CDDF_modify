@@ -13,9 +13,9 @@ from net import (
     infer_cddfuse_detail_num_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
-from CrossMambaFusion import (
-    CrossMambaFusionBlock,
-    IntraModalEnhanceBlock,
+from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock
+from CMFB import (
+    CommenMambaFusionBlock,
     get_decoder_residual_input,
     infer_cross_mamba_share_mode,
     is_cross_mamba_fusion_checkpoint,
@@ -151,9 +151,11 @@ def main():
         CrossMambaFusionLayer = None
         FMEMLayer = None
         if use_new_fusion:
-            ModalEnhanceLayer = nn.DataParallel(IntraModalEnhanceBlock(dim=64)).to(device)
+            ModalEnhanceLayer = nn.DataParallel(
+                HighLowFrequencyReciprocalMambaBlock(dim=64)
+            ).to(device)
             CrossMambaFusionLayer = nn.DataParallel(
-                CrossMambaFusionBlock(
+                CommenMambaFusionBlock(
                     dim=64,
                     share_mode=infer_cross_mamba_share_mode(checkpoint),
                 )

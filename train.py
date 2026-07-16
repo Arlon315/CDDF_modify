@@ -16,10 +16,10 @@ from net import (
     resolve_cddfuse_encoder_detail_feature,
     resolve_cddfuse_decoder_block,
 )
-from CrossMambaFusion import (
+from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock
+from CMFB import (
     CROSS_MAMBA_FUSION_STRUCTURE,
-    CrossMambaFusionBlock,
-    IntraModalEnhanceBlock,
+    CommenMambaFusionBlock,
     get_decoder_residual_input,
     infer_cross_mamba_share_mode,
 )
@@ -202,10 +202,10 @@ encoder_module, decoder_module, _, _ = build_cddfuse_modules(
 DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 ModalEnhanceLayer = nn.DataParallel(
-    IntraModalEnhanceBlock(dim=64)
+    HighLowFrequencyReciprocalMambaBlock(dim=64)
 ).to(device)
 CrossMambaFusionLayer = nn.DataParallel(
-    CrossMambaFusionBlock(dim=64, share_mode=args.cross_mamba_share_mode)
+    CommenMambaFusionBlock(dim=64, share_mode=args.cross_mamba_share_mode)
 ).to(device)
 
 # optimizer, scheduler and loss function
@@ -440,7 +440,12 @@ if args.resume:
 
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
-    load_state_if_present(ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
+    if fusion_structure_matches:
+        load_state_if_present(
+            ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
+    else:
+        print(
+            f"Skipped HFRM ModalEnhanceLayer: checkpoint fusion_structure='{checkpoint_fusion_structure}'.")
     load_compatible_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
@@ -477,9 +482,9 @@ if args.resume:
                 f"current decoder_block='{decoder_block}'."
             )
         if not fusion_structure_matches:
-            skipped_resume_parts.append('ModalEnhanceLayer/CrossMambaFusionLayer')
+            skipped_resume_parts.append('HFRM ModalEnhanceLayer optimizer/scheduler')
             print(
-                f"Skipped new fusion layers: checkpoint fusion_structure='{checkpoint_fusion_structure}'."
+                f"Skipped HFRM state: checkpoint fusion_structure='{checkpoint_fusion_structure}'."
             )
         elif not cross_mamba_share_mode_matches:
             skipped_resume_parts.append('CrossMambaFusionLayer optimizer/scheduler')
@@ -494,10 +499,10 @@ if args.resume:
         if decoder_block_matches:
             load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
             load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
-        if 'ModalEnhanceLayer' in checkpoint:
+        if 'ModalEnhanceLayer' in checkpoint and fusion_structure_matches:
             load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
             load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
-        if 'CrossMambaFusionLayer' in checkpoint and fusion_structure_matches and cross_mamba_share_mode_matches:
+        if 'CrossMambaFusionLayer' in checkpoint and cross_mamba_share_mode_matches:
             load_optimizer_if_present(optimizer4, checkpoint, 'optimizer4')
             load_scheduler_if_present(scheduler4, checkpoint, 'scheduler4')
 

@@ -39,9 +39,9 @@ from net import (  # noqa: E402
     infer_cddfuse_encoder_detail_enhance_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint  # noqa: E402
-from CrossMambaFusion import (  # noqa: E402
-    CrossMambaFusionBlock,
-    IntraModalEnhanceBlock,
+from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock  # noqa: E402
+from CMFB import (  # noqa: E402
+    CommenMambaFusionBlock,
     infer_cross_mamba_share_mode,
     is_cross_mamba_fusion_checkpoint,
 )
@@ -108,8 +108,8 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
     fmem = None
 
     if use_new_fusion:
-        modal_enhance = IntraModalEnhanceBlock(dim=64).to(device)
-        cross_mamba_fusion = CrossMambaFusionBlock(
+        modal_enhance = HighLowFrequencyReciprocalMambaBlock(dim=64).to(device)
+        cross_mamba_fusion = CommenMambaFusionBlock(
             dim=64,
             share_mode=infer_cross_mamba_share_mode(checkpoint),
         ).to(device)

@@ -6,20 +6,13 @@ from SpatialMamba import LayerNorm
 from net import AKCBlock
 
 
-CROSS_MAMBA_FUSION_STRUCTURE = 'low_high_cross_mamba_private_akc'
-LEGACY_CROSS_MAMBA_FUSION_STRUCTURES = ('low_high_cross_mamba',)
+CROSS_MAMBA_FUSION_STRUCTURE = 'hfrm_mamba_common_mamba_private_akc'
 
 
 def is_cross_mamba_fusion_checkpoint(checkpoint):
     if not isinstance(checkpoint, dict):
         return False
-    fusion_structure = checkpoint.get('fusion_structure')
-    return fusion_structure in (
-        CROSS_MAMBA_FUSION_STRUCTURE,
-        *LEGACY_CROSS_MAMBA_FUSION_STRUCTURES,
-    ) or (
-        'ModalEnhanceLayer' in checkpoint and 'CrossMambaFusionLayer' in checkpoint
-    )
+    return checkpoint.get('fusion_structure') == CROSS_MAMBA_FUSION_STRUCTURE
 
 
 def infer_cross_mamba_share_mode(checkpoint):
@@ -41,24 +34,9 @@ def get_decoder_residual_input(mode, data_ir, data_vis):
     raise ValueError(f"Unsupported decoder residual mode: {mode}")
 
 
-class IntraModalEnhanceBlock(nn.Module):
-    def __init__(self, dim=64, out_dim=None):
-        super(IntraModalEnhanceBlock, self).__init__()
-        out_dim = dim if out_dim is None else int(out_dim)
-        self.proj = nn.Conv2d(dim * 2, out_dim, kernel_size=1, bias=True)
-
-    def forward(self, low_feature, high_feature):
-        if low_feature.shape != high_feature.shape:
-            raise ValueError(
-                f"low_feature and high_feature must have the same shape, got "
-                f"{low_feature.shape} and {high_feature.shape}."
-            )
-        return self.proj(torch.cat((low_feature, high_feature), dim=1))
-
-
-class CrossMambaFusionBlock(nn.Module):
+class CommenMambaFusionBlock(nn.Module):
     def __init__(self, dim=64, share_mode='independent', use_checkpoint=True):
-        super(CrossMambaFusionBlock, self).__init__()
+        super(CommenMambaFusionBlock, self).__init__()
         self.ir_norm = LayerNorm(dim, 'WithBias')
         self.vi_norm = LayerNorm(dim, 'WithBias')
         self.cross_mixer = GlobalMamba4Path(
