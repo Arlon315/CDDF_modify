@@ -155,19 +155,24 @@ def get_project_defaults() -> Mapping[str, object]:
                 "num_pairs": 24,
             },
             # "RoadScence": {
-            #     "ir_dir": "E:/workspace/python_work/dataSet/MixDataSet/split_8_2/test/RoadScene/ir",
-            #     "vis_dir": "E:/workspace/python_work/dataSet/MixDataSet/split_8_2/test/RoadScene/vi",
-            #     "num_pairs": 44,
+            #     "ir_dir": "E:/workspace/python_work/dataSet/RoadScene/cropinfrared",
+            #     "vis_dir": "E:/workspace/python_work/dataSet/RoadScene/crop_LR_visible",
+            #     "num_pairs": 221,
             # },
             # "M3FD_Fusion": {
-            #     "ir_dir": "E:/workspace/python_work/dataSet/MixDataSet/split_8_2/test/M3FD/ir",
-            #     "vis_dir": "E:/workspace/python_work/dataSet/MixDataSet/split_8_2/test/M3FD/vi",
-            #     "num_pairs": 60,
+            #     "ir_dir": "E:/workspace/python_work/dataSet/M3FD_Fusion/Ir",
+            #     "vis_dir": "E:/workspace/python_work/dataSet/M3FD_Fusion/Vis",
+            #     "num_pairs": 200,
             # },
             # "MSRS-main": {
             #     "ir_dir": "E:/workspace/python_work/dataSet/MSRS-main/test/ir",
             #     "vis_dir": "E:/workspace/python_work/dataSet/MSRS-main/test/vi",
             #     "num_pairs": 361,
+            # },
+            # "FMB": {
+            #     "ir_dir": "E:/workspace/python_work/dataSet/FMB/test/Infrared",
+            #     "vis_dir": "E:/workspace/python_work/dataSet/FMB/test/Visible",
+            #     "num_pairs": 280,
             # },
             # 服务器
             "RoadScence": {

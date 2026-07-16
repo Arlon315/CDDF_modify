@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="540" viewBox="0 0 1280 540">
+  <title>Editable feature merge to fusion alignment</title>
+  <desc>Editable SVG with the arrow aligned to the vertical midpoint of the fusion module.</desc>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="9" refX="11" refY="4.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4.5 L0,9 Z" fill="#425466"/>
+    </marker>
+    <style>
+      text {
+        font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+        fill: #172b3a;
+      }
+      .module {
+        fill: #fbfdfe;
+        stroke: #9aaab5;
+        stroke-width: 2;
+      }
+      .source {
+        fill: #f0edff;
+        stroke: #7259b7;
+        stroke-width: 2;
+      }
+      .branch-shared {
+        fill: #eef6ff;
+        stroke: #4e83b5;
+        stroke-width: 2;
+      }
+      .branch-private {
+        fill: #fff0f4;
+        stroke: #bd5c7a;
+        stroke-width: 2;
+      }
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+        text-anchor: middle;
+      }
+      .node-title {
+        font-size: 19px;
+        font-weight: 700;
+        text-anchor: middle;
+      }
+      .node-text {
+        font-size: 16px;
+        text-anchor: middle;
+        fill: #334e5c;
+      }
+      .arrow {
+        fill: none;
+        stroke: #425466;
+        stroke-width: 3;
+        marker-end: url(#arrow);
+      }
+    </style>
+  </defs>
+
+  <g id="feature-merge">
+    <rect id="feature-merge-box" x="60" y="220" width="260" height="100" class="source"/>
+    <text id="feature-merge-title" x="190" y="263" class="node-title">&#x4f4e;/&#x9ad8;&#x9891;&#x7279;&#x5f81;&#x5408;&#x5e76;</text>
+    <text id="feature-merge-shape" x="190" y="292" class="node-text">&#x6d45;&#x5c42;&#x7279;&#x5f81;</text>
+  </g>
+
+  <g id="shared-cross-mamba-fusion">
+    <rect id="fusion-module-box" x="470" y="115" width="700" height="310" class="module"/>
+    <text id="fusion-module-title" x="820" y="155" class="title">&#x5171;&#x4eab;&#x4ea4;&#x53c9; Mamba &#x878d;&#x5408;</text>
+
+    <g id="shared-mamba-branch">
+      <rect id="shared-mamba-branch-box" x="520" y="190" width="600" height="78" class="branch-shared"/>
+      <text id="shared-mamba-branch-title" x="820" y="222" class="node-title">&#x6a21;&#x6001;&#x5171;&#x4eab; Mamba</text>
+      <text id="shared-mamba-branch-detail" x="820" y="248" class="node-text">&#x4ea4;&#x53c9;&#x878d;&#x5408;&#x5206;&#x652f;</text>
+    </g>
+
+    <g id="private-feature-branch">
+      <rect id="private-feature-branch-box" x="520" y="322" width="600" height="78" class="branch-private"/>
+      <text id="private-feature-branch-title" x="820" y="354" class="node-title">&#x6a21;&#x6001;&#x4e2a;&#x6027;&#x7279;&#x5f81;</text>
+      <text id="private-feature-branch-detail" x="820" y="380" class="node-text">&#x63d0;&#x53d6;&#x5206;&#x652f;</text>
+    </g>
+  </g>
+
+  <!-- The endpoint is the vertical midpoint of the fusion module's left edge. -->
+  <path id="merge-to-fusion-arrow" d="M320 270 H470" class="arrow"/>
+</svg>
