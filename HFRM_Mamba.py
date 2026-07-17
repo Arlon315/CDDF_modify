@@ -230,8 +230,8 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
         self._init_gate(self.low_gate)
         self._init_gate(self.high_gate)
 
-        self.low_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
-        self.high_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
+        # self.low_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
+        # self.high_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
         self.fusion_proj = nn.Conv2d(
             dim, out_dim, kernel_size=1, bias=True)
 
@@ -247,18 +247,20 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
                 f"low_feature and high_feature must have the same shape, got "
                 f"{low_feature.shape} and {high_feature.shape}."
             )
-
-        low_feature = self.low_norm(low_feature)
-        high_feature = self.high_norm(high_feature)
-
-        low_context = self.low_mamba(low_feature)
-        high_context = self.high_mamba(high_feature)
+        # 归一化特征只用于生成可信图
+        low_normed  = self.low_norm(low_feature)
+        high_normed  = self.high_norm(high_feature)
+        
+        low_context = self.low_mamba(low_normed)
+        high_context = self.high_mamba(high_normed)
         low_attention = self.low_gate(low_context)
         high_attention = self.high_gate(high_context)
 
-        low_content = self.low_value(low_feature)
-        high_content = self.high_value(high_feature)
-        high_enhanced = high_content * (1.0 + low_attention)
-        low_enhanced = low_content * (1.0 + high_attention)
 
-        return self.fusion_proj(low_enhanced + high_enhanced)
+        # low_content = self.low_value(low_feature)
+        # high_content = self.high_value(high_feature)
+        # 可信图直接调制对方的原始频率特征
+        high_enhanced = high_feature * low_attention + high_feature 
+        low_enhanced = low_feature * high_attention + low_feature
+
+        return self.fusion_proj(torch.cat([low_enhanced, high_enhanced], dim=1))
