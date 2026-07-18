@@ -13,9 +13,9 @@ from net import (
     infer_cddfuse_detail_num_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
-from HFRM_Mamba import (
-    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
-    HighLowFrequencyReciprocalMambaBlock,
+from GLCM_Mamba import (
+    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
+    GlobalLocalCrossModalMambaBlock,
 )
 from CMFB import (
     CommenMambaFusionBlock,
@@ -133,9 +133,9 @@ def main():
         checkpoint = torch.load(args.ckpt_path, map_location=device)
         use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
         if (use_new_fusion and checkpoint.get('modal_enhance_structure')
-                != CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE):
+                != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
             raise ValueError(
-                'Checkpoint does not use the cross-modal frequency-reciprocal ModalEnhanceLayer.')
+                'Checkpoint does not use the cross-modal global-local ModalEnhanceLayer.')
         use_fmem = 'FMEMLayer' in checkpoint and not use_new_fusion
         if use_fmem and not is_cmem_checkpoint(checkpoint):
             raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
@@ -159,7 +159,7 @@ def main():
         FMEMLayer = None
         if use_new_fusion:
             ModalEnhanceLayer = nn.DataParallel(
-                HighLowFrequencyReciprocalMambaBlock(dim=64)
+                GlobalLocalCrossModalMambaBlock(dim=64)
             ).to(device)
             CrossMambaFusionLayer = nn.DataParallel(
                 CommenMambaFusionBlock(

@@ -39,9 +39,9 @@ from net import (  # noqa: E402
     infer_cddfuse_encoder_detail_enhance_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint  # noqa: E402
-from HFRM_Mamba import (  # noqa: E402
-    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
-    HighLowFrequencyReciprocalMambaBlock,
+from GLCM_Mamba import (  # noqa: E402
+    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
+    GlobalLocalCrossModalMambaBlock,
 )
 from CMFB import (  # noqa: E402
     CommenMambaFusionBlock,
@@ -90,9 +90,9 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
     checkpoint = torch.load(str(model_file), map_location=device)
     use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
     if (use_new_fusion and checkpoint.get('modal_enhance_structure')
-            != CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE):
+            != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
         raise ValueError(
-            'Checkpoint does not use the cross-modal frequency-reciprocal ModalEnhanceLayer.')
+            'Checkpoint does not use the cross-modal global-local ModalEnhanceLayer.')
 
     encoder, decoder, base_fuse, detail_fuse = build_cddfuse_modules(
         infer_cddfuse_backbone(checkpoint),
@@ -115,7 +115,7 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
     fmem = None
 
     if use_new_fusion:
-        modal_enhance = HighLowFrequencyReciprocalMambaBlock(dim=64).to(device)
+        modal_enhance = GlobalLocalCrossModalMambaBlock(dim=64).to(device)
         cross_mamba_fusion = CommenMambaFusionBlock(
             dim=64,
             share_mode=infer_cross_mamba_share_mode(checkpoint),

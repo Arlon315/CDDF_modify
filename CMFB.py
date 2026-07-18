@@ -6,7 +6,7 @@ from SpatialMamba import LayerNorm
 from net import AKCBlock
 
 
-CROSS_MAMBA_FUSION_STRUCTURE = 'hfrm_mamba_common_mamba_private_akc'
+CROSS_MAMBA_FUSION_STRUCTURE = 'glcm_mamba_common_mamba_private_akc'
 
 
 def is_cross_mamba_fusion_checkpoint(checkpoint):

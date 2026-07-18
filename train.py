@@ -16,9 +16,9 @@ from net import (
     resolve_cddfuse_encoder_detail_feature,
     resolve_cddfuse_decoder_block,
 )
-from HFRM_Mamba import (
-    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
-    HighLowFrequencyReciprocalMambaBlock,
+from GLCM_Mamba import (
+    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
+    GlobalLocalCrossModalMambaBlock,
 )
 from CMFB import (
     CROSS_MAMBA_FUSION_STRUCTURE,
@@ -205,7 +205,7 @@ encoder_module, decoder_module, _, _ = build_cddfuse_modules(
 DIDF_Encoder = nn.DataParallel(encoder_module).to(device)
 DIDF_Decoder = nn.DataParallel(decoder_module).to(device)
 ModalEnhanceLayer = nn.DataParallel(
-    HighLowFrequencyReciprocalMambaBlock(dim=64)
+    GlobalLocalCrossModalMambaBlock(dim=64)
 ).to(device)
 CrossMambaFusionLayer = nn.DataParallel(
     CommenMambaFusionBlock(dim=64, share_mode=args.cross_mamba_share_mode)
@@ -258,7 +258,7 @@ def build_checkpoint(epoch):
         'seed': seed,
         'timestamp': timestamp,
         'fusion_structure': CROSS_MAMBA_FUSION_STRUCTURE,
-        'modal_enhance_structure': CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
+        'modal_enhance_structure': CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
         'cross_mamba_share_mode': args.cross_mamba_share_mode,
         'skip_phase1': bool(args.skip_phase1),
         'use_decomp_loss': bool(args.use_decomp_loss),
@@ -401,7 +401,7 @@ if args.resume:
     encoder_detail_feature_matches = checkpoint_encoder_detail_feature == encoder_detail_feature
     fusion_structure_matches = checkpoint_fusion_structure == CROSS_MAMBA_FUSION_STRUCTURE
     modal_enhance_structure_matches = (
-        checkpoint_modal_enhance_structure == CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE
+        checkpoint_modal_enhance_structure == CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE
     )
     cross_mamba_share_mode_matches = checkpoint_cross_mamba_share_mode == args.cross_mamba_share_mode
 
@@ -444,7 +444,7 @@ if args.resume:
         if not modal_enhance_structure_matches:
             raise ValueError(
                 f"Checkpoint modal_enhance_structure is '{checkpoint_modal_enhance_structure}', "
-                f"but current training expects '{CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE}'."
+                f"but current training expects '{CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE}'."
             )
         if not cross_mamba_share_mode_matches:
             raise ValueError(
@@ -459,8 +459,8 @@ if args.resume:
             ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
     else:
         print(
-            'Skipped HFRM ModalEnhanceLayer: checkpoint structure does not match the '
-            'cross-modal frequency-reciprocal architecture.'
+            'Skipped GLCM ModalEnhanceLayer: checkpoint structure does not match the '
+            'cross-modal global-local architecture.'
         )
     load_compatible_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
 
@@ -498,10 +498,10 @@ if args.resume:
                 f"current decoder_block='{decoder_block}'."
             )
         if not (fusion_structure_matches and modal_enhance_structure_matches):
-            skipped_resume_parts.append('HFRM ModalEnhanceLayer optimizer/scheduler')
+            skipped_resume_parts.append('GLCM ModalEnhanceLayer optimizer/scheduler')
             print(
-                'Skipped HFRM state: checkpoint does not use the '
-                'cross-modal frequency-reciprocal architecture.'
+                'Skipped GLCM state: checkpoint does not use the '
+                'cross-modal global-local architecture.'
             )
         elif not cross_mamba_share_mode_matches:
             skipped_resume_parts.append('CrossMambaFusionLayer optimizer/scheduler')

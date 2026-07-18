@@ -8,7 +8,7 @@ from torch.utils.checkpoint import checkpoint as checkpoint_fn
 from SpatialMamba import LayerNorm
 
 
-CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE = 'cross_modal_same_frequency_reciprocal'
+CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE = 'cross_modal_global_local'
 
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
@@ -208,25 +208,25 @@ class SSMOnly4Path(nn.Module):
         return self.proj(h_fwd + h_rev + v_fwd + v_rev)
 
 
-class HighLowFrequencyReciprocalMambaBlock(nn.Module):
+class GlobalLocalCrossModalMambaBlock(nn.Module):
     def __init__(self, dim=64, out_dim=None):
-        super(HighLowFrequencyReciprocalMambaBlock, self).__init__()
+        super(GlobalLocalCrossModalMambaBlock, self).__init__()
         out_dim = dim if out_dim is None else int(out_dim)
 
-        self.ir_low_norm = LayerNorm(dim, 'WithBias')
-        self.vi_low_norm = LayerNorm(dim, 'WithBias')
-        self.ir_high_norm = LayerNorm(dim, 'WithBias')
-        self.vi_high_norm = LayerNorm(dim, 'WithBias')
+        self.ir_global_norm = LayerNorm(dim, 'WithBias')
+        self.vi_global_norm = LayerNorm(dim, 'WithBias')
+        self.ir_local_norm = LayerNorm(dim, 'WithBias')
+        self.vi_local_norm = LayerNorm(dim, 'WithBias')
 
-        self.ir_low_mamba = SSMOnly4Path(dim=dim)
-        self.vi_low_mamba = SSMOnly4Path(dim=dim)
-        self.ir_high_mamba = SSMOnly4Path(dim=dim)
-        self.vi_high_mamba = SSMOnly4Path(dim=dim)
+        self.ir_global_mamba = SSMOnly4Path(dim=dim)
+        self.vi_global_mamba = SSMOnly4Path(dim=dim)
+        self.ir_local_mamba = SSMOnly4Path(dim=dim)
+        self.vi_local_mamba = SSMOnly4Path(dim=dim)
 
-        self.ir_low_gate = self._make_gate(dim)
-        self.vi_low_gate = self._make_gate(dim)
-        self.ir_high_gate = self._make_gate(dim)
-        self.vi_high_gate = self._make_gate(dim)
+        self.ir_global_gate = self._make_gate(dim)
+        self.vi_global_gate = self._make_gate(dim)
+        self.ir_local_gate = self._make_gate(dim)
+        self.vi_local_gate = self._make_gate(dim)
 
         self.ir_fusion_proj = nn.Conv2d(
             dim * 2, out_dim, kernel_size=1, bias=True)
@@ -251,39 +251,39 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
 
     def forward(
         self,
-        ir_low_feature,
-        ir_high_feature,
-        vi_low_feature,
-        vi_high_feature,
+        ir_global_feature,
+        ir_local_feature,
+        vi_global_feature,
+        vi_local_feature,
     ):
         features = (
-            ir_low_feature,
-            ir_high_feature,
-            vi_low_feature,
-            vi_high_feature,
+            ir_global_feature,
+            ir_local_feature,
+            vi_global_feature,
+            vi_local_feature,
         )
-        if any(feature.shape != ir_low_feature.shape for feature in features[1:]):
+        if any(feature.shape != ir_global_feature.shape for feature in features[1:]):
             raise ValueError(
-                'IR/VI low/high features must have the same shape, got '
+                'IR/VI global/local features must have the same shape, got '
                 f'{[feature.shape for feature in features]}.'
             )
 
-        ir_low_attention = self.ir_low_gate(
-            self.ir_low_mamba(self.ir_low_norm(ir_low_feature)))
-        vi_low_attention = self.vi_low_gate(
-            self.vi_low_mamba(self.vi_low_norm(vi_low_feature)))
-        ir_high_attention = self.ir_high_gate(
-            self.ir_high_mamba(self.ir_high_norm(ir_high_feature)))
-        vi_high_attention = self.vi_high_gate(
-            self.vi_high_mamba(self.vi_high_norm(vi_high_feature)))
+        ir_global_attention = self.ir_global_gate(
+            self.ir_global_mamba(self.ir_global_norm(ir_global_feature)))
+        vi_global_attention = self.vi_global_gate(
+            self.vi_global_mamba(self.vi_global_norm(vi_global_feature)))
+        ir_local_attention = self.ir_local_gate(
+            self.ir_local_mamba(self.ir_local_norm(ir_local_feature)))
+        vi_local_attention = self.vi_local_gate(
+            self.vi_local_mamba(self.vi_local_norm(vi_local_feature)))
 
-        ir_low_enhanced = ir_low_feature * vi_low_attention + ir_low_feature
-        vi_low_enhanced = vi_low_feature * ir_low_attention + vi_low_feature
-        ir_high_enhanced = ir_high_feature * vi_high_attention + ir_high_feature
-        vi_high_enhanced = vi_high_feature * ir_high_attention + vi_high_feature
+        ir_global_enhanced = ir_global_feature * vi_global_attention + ir_global_feature
+        vi_global_enhanced = vi_global_feature * ir_global_attention + vi_global_feature
+        ir_local_enhanced = ir_local_feature * vi_local_attention + ir_local_feature
+        vi_local_enhanced = vi_local_feature * ir_local_attention + vi_local_feature
 
         ir_enhanced = self.ir_fusion_proj(torch.cat(
-            [ir_low_enhanced, ir_high_enhanced], dim=1))
+            [ir_global_enhanced, ir_local_enhanced], dim=1))
         vi_enhanced = self.vi_fusion_proj(torch.cat(
-            [vi_low_enhanced, vi_high_enhanced], dim=1))
+            [vi_global_enhanced, vi_local_enhanced], dim=1))
         return ir_enhanced, vi_enhanced
