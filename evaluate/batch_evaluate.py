@@ -190,6 +190,11 @@ def get_project_defaults() -> Mapping[str, object]:
                 "vis_dir" : os.path.expanduser(r"~/rivermind-data/dataSets/MSRS-main/test/vi"),
                 "num_pairs": 361,
             },
+            "FMB": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/FMB/test/Infrared"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/FMB/test/Visible"),
+                "num_pairs": 280,
+            },
             "40_vot_tno": {
                 "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/ir"),
                 "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/vis"),

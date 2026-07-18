@@ -233,7 +233,8 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
         # self.low_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
         # self.high_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
         self.fusion_proj = nn.Conv2d(
-            dim, out_dim, kernel_size=1, bias=True)
+            dim * 2, out_dim, kernel_size=1, bias=True
+        )
 
     def _init_gate(self, gate):
         pointwise = gate[2]
