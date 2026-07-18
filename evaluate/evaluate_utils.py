@@ -39,7 +39,10 @@ from net import (  # noqa: E402
     infer_cddfuse_encoder_detail_enhance_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint  # noqa: E402
-from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock  # noqa: E402
+from HFRM_Mamba import (  # noqa: E402
+    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
+    HighLowFrequencyReciprocalMambaBlock,
+)
 from CMFB import (  # noqa: E402
     CommenMambaFusionBlock,
     infer_cross_mamba_share_mode,
@@ -86,6 +89,10 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
 
     checkpoint = torch.load(str(model_file), map_location=device)
     use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
+    if (use_new_fusion and checkpoint.get('modal_enhance_structure')
+            != CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE):
+        raise ValueError(
+            'Checkpoint does not use the cross-modal frequency-reciprocal ModalEnhanceLayer.')
 
     encoder, decoder, base_fuse, detail_fuse = build_cddfuse_modules(
         infer_cddfuse_backbone(checkpoint),
@@ -359,8 +366,8 @@ def run_fusion_prediction(
         feature_v_b, feature_v_d, _ = bundle["encoder"](vis_tensor)
         feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
         if bundle.get("use_new_fusion", False):
-            feature_v_e = bundle["modal_enhance"](feature_v_b, feature_v_d)
-            feature_i_e = bundle["modal_enhance"](feature_i_b, feature_i_d)
+            feature_i_e, feature_v_e = bundle["modal_enhance"](
+                feature_i_b, feature_i_d, feature_v_b, feature_v_d)
             feature_f_e = bundle["cross_mamba_fusion"](feature_i_e, feature_v_e)
             fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
         else:

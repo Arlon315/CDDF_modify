@@ -16,7 +16,10 @@ from net import (
     resolve_cddfuse_encoder_detail_feature,
     resolve_cddfuse_decoder_block,
 )
-from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock
+from HFRM_Mamba import (
+    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
+    HighLowFrequencyReciprocalMambaBlock,
+)
 from CMFB import (
     CROSS_MAMBA_FUSION_STRUCTURE,
     CommenMambaFusionBlock,
@@ -255,6 +258,7 @@ def build_checkpoint(epoch):
         'seed': seed,
         'timestamp': timestamp,
         'fusion_structure': CROSS_MAMBA_FUSION_STRUCTURE,
+        'modal_enhance_structure': CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
         'cross_mamba_share_mode': args.cross_mamba_share_mode,
         'skip_phase1': bool(args.skip_phase1),
         'use_decomp_loss': bool(args.use_decomp_loss),
@@ -390,11 +394,15 @@ if args.resume:
     checkpoint_encoder_detail_feature = infer_cddfuse_encoder_detail_feature(checkpoint)
     checkpoint_cross_mamba_share_mode = infer_cross_mamba_share_mode(checkpoint)
     checkpoint_fusion_structure = checkpoint.get('fusion_structure') if isinstance(checkpoint, dict) else None
+    checkpoint_modal_enhance_structure = checkpoint.get('modal_enhance_structure') if isinstance(checkpoint, dict) else None
 
     decoder_block_matches = checkpoint_decoder_block == decoder_block
     encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
     encoder_detail_feature_matches = checkpoint_encoder_detail_feature == encoder_detail_feature
     fusion_structure_matches = checkpoint_fusion_structure == CROSS_MAMBA_FUSION_STRUCTURE
+    modal_enhance_structure_matches = (
+        checkpoint_modal_enhance_structure == CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE
+    )
     cross_mamba_share_mode_matches = checkpoint_cross_mamba_share_mode == args.cross_mamba_share_mode
 
     resume_mode = args.resume_mode
@@ -406,6 +414,7 @@ if args.resume:
                 and encoder_base_feature_matches
                 and encoder_detail_feature_matches
                 and fusion_structure_matches
+                and modal_enhance_structure_matches
                 and cross_mamba_share_mode_matches
             )
             else "pretrain"
@@ -432,6 +441,11 @@ if args.resume:
                 f"Checkpoint fusion_structure is '{checkpoint_fusion_structure}', "
                 f"but current training expects '{CROSS_MAMBA_FUSION_STRUCTURE}'."
             )
+        if not modal_enhance_structure_matches:
+            raise ValueError(
+                f"Checkpoint modal_enhance_structure is '{checkpoint_modal_enhance_structure}', "
+                f"but current training expects '{CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE}'."
+            )
         if not cross_mamba_share_mode_matches:
             raise ValueError(
                 f"Checkpoint cross_mamba_share_mode is '{checkpoint_cross_mamba_share_mode}', "
@@ -440,12 +454,14 @@ if args.resume:
 
     load_state_if_present(DIDF_Encoder, checkpoint, 'DIDF_Encoder', strict=False)
     load_compatible_state_if_present(DIDF_Decoder, checkpoint, 'DIDF_Decoder')
-    if fusion_structure_matches:
+    if fusion_structure_matches and modal_enhance_structure_matches:
         load_state_if_present(
             ModalEnhanceLayer, checkpoint, 'ModalEnhanceLayer', required=False)
     else:
         print(
-            f"Skipped HFRM ModalEnhanceLayer: checkpoint fusion_structure='{checkpoint_fusion_structure}'.")
+            'Skipped HFRM ModalEnhanceLayer: checkpoint structure does not match the '
+            'cross-modal frequency-reciprocal architecture.'
+        )
     load_compatible_state_if_present(CrossMambaFusionLayer, checkpoint, 'CrossMambaFusionLayer', required=False)
 
     checkpoint_epoch = int(checkpoint.get('epoch', 0))
@@ -481,10 +497,11 @@ if args.resume:
                 f"Partially loaded DIDF_Decoder: checkpoint decoder_block='{checkpoint_decoder_block}', "
                 f"current decoder_block='{decoder_block}'."
             )
-        if not fusion_structure_matches:
+        if not (fusion_structure_matches and modal_enhance_structure_matches):
             skipped_resume_parts.append('HFRM ModalEnhanceLayer optimizer/scheduler')
             print(
-                f"Skipped HFRM state: checkpoint fusion_structure='{checkpoint_fusion_structure}'."
+                'Skipped HFRM state: checkpoint does not use the '
+                'cross-modal frequency-reciprocal architecture.'
             )
         elif not cross_mamba_share_mode_matches:
             skipped_resume_parts.append('CrossMambaFusionLayer optimizer/scheduler')
@@ -499,7 +516,8 @@ if args.resume:
         if decoder_block_matches:
             load_optimizer_if_present(optimizer2, checkpoint, 'optimizer2')
             load_scheduler_if_present(scheduler2, checkpoint, 'scheduler2')
-        if 'ModalEnhanceLayer' in checkpoint and fusion_structure_matches:
+        if ('ModalEnhanceLayer' in checkpoint and fusion_structure_matches
+                and modal_enhance_structure_matches):
             load_optimizer_if_present(optimizer3, checkpoint, 'optimizer3')
             load_scheduler_if_present(scheduler3, checkpoint, 'scheduler3')
         if 'CrossMambaFusionLayer' in checkpoint and cross_mamba_share_mode_matches:
@@ -551,8 +569,8 @@ for epoch in range(start_epoch, num_epochs):
         if run_phase1:
             feature_V_L, feature_V_H, _ = DIDF_Encoder(data_VIS)
             feature_I_L, feature_I_H, _ = DIDF_Encoder(data_IR)
-            feature_V_E = ModalEnhanceLayer(feature_V_L, feature_V_H)
-            feature_I_E = ModalEnhanceLayer(feature_I_L, feature_I_H)
+            feature_I_E, feature_V_E = ModalEnhanceLayer(
+                feature_I_L, feature_I_H, feature_V_L, feature_V_H)
             data_VIS_hat, _ = DIDF_Decoder(data_VIS, fused_feature=feature_V_E)
             data_IR_hat, _ = DIDF_Decoder(data_IR, fused_feature=feature_I_E)
 
@@ -587,8 +605,8 @@ for epoch in range(start_epoch, num_epochs):
         else:
             feature_V_L, feature_V_H, _ = DIDF_Encoder(data_VIS)
             feature_I_L, feature_I_H, _ = DIDF_Encoder(data_IR)
-            feature_V_E = ModalEnhanceLayer(feature_V_L, feature_V_H)
-            feature_I_E = ModalEnhanceLayer(feature_I_L, feature_I_H)
+            feature_I_E, feature_V_E = ModalEnhanceLayer(
+                feature_I_L, feature_I_H, feature_V_L, feature_V_H)
             feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
             decoder_input = get_decoder_residual_input(args.decoder_residual, data_IR, data_VIS)
             data_Fuse, feature_F = DIDF_Decoder(decoder_input, fused_feature=feature_F_E)

@@ -13,7 +13,10 @@ from net import (
     infer_cddfuse_detail_num_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
-from HFRM_Mamba import HighLowFrequencyReciprocalMambaBlock
+from HFRM_Mamba import (
+    CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE,
+    HighLowFrequencyReciprocalMambaBlock,
+)
 from CMFB import (
     CommenMambaFusionBlock,
     get_decoder_residual_input,
@@ -129,6 +132,10 @@ def main():
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(args.ckpt_path, map_location=device)
         use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
+        if (use_new_fusion and checkpoint.get('modal_enhance_structure')
+                != CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE):
+            raise ValueError(
+                'Checkpoint does not use the cross-modal frequency-reciprocal ModalEnhanceLayer.')
         use_fmem = 'FMEMLayer' in checkpoint and not use_new_fusion
         if use_fmem and not is_cmem_checkpoint(checkpoint):
             raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
@@ -203,8 +210,8 @@ def main():
                 feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
                 feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
                 if use_new_fusion:
-                    feature_V_E = ModalEnhanceLayer(feature_V_B, feature_V_D)
-                    feature_I_E = ModalEnhanceLayer(feature_I_B, feature_I_D)
+                    feature_I_E, feature_V_E = ModalEnhanceLayer(
+                        feature_I_B, feature_I_D, feature_V_B, feature_V_D)
                     feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
                     decoder_input = get_decoder_residual_input(
                         checkpoint.get('decoder_residual', 'none'), data_IR, data_VIS)

@@ -7,6 +7,9 @@ from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
 from SpatialMamba import LayerNorm
 
+
+CROSS_MODAL_FREQUENCY_RECIPROCAL_STRUCTURE = 'cross_modal_same_frequency_reciprocal'
+
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 except ImportError:
@@ -210,31 +213,35 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
         super(HighLowFrequencyReciprocalMambaBlock, self).__init__()
         out_dim = dim if out_dim is None else int(out_dim)
 
-        self.low_norm = LayerNorm(dim, 'WithBias')
-        self.high_norm = LayerNorm(dim, 'WithBias')
-        self.low_mamba = SSMOnly4Path(dim=dim)
-        self.high_mamba = SSMOnly4Path(dim=dim)
+        self.ir_low_norm = LayerNorm(dim, 'WithBias')
+        self.vi_low_norm = LayerNorm(dim, 'WithBias')
+        self.ir_high_norm = LayerNorm(dim, 'WithBias')
+        self.vi_high_norm = LayerNorm(dim, 'WithBias')
 
-        self.low_gate = nn.Sequential(
+        self.ir_low_mamba = SSMOnly4Path(dim=dim)
+        self.vi_low_mamba = SSMOnly4Path(dim=dim)
+        self.ir_high_mamba = SSMOnly4Path(dim=dim)
+        self.vi_high_mamba = SSMOnly4Path(dim=dim)
+
+        self.ir_low_gate = self._make_gate(dim)
+        self.vi_low_gate = self._make_gate(dim)
+        self.ir_high_gate = self._make_gate(dim)
+        self.vi_high_gate = self._make_gate(dim)
+
+        self.ir_fusion_proj = nn.Conv2d(
+            dim * 2, out_dim, kernel_size=1, bias=True)
+        self.vi_fusion_proj = nn.Conv2d(
+            dim * 2, out_dim, kernel_size=1, bias=True)
+
+    def _make_gate(self, dim):
+        gate = nn.Sequential(
             nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=dim, bias=True),
             nn.SiLU(),
             nn.Conv2d(dim, dim, kernel_size=1, bias=True),
             nn.Sigmoid(),
         )
-        self.high_gate = nn.Sequential(
-            nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=dim, bias=True),
-            nn.SiLU(),
-            nn.Conv2d(dim, dim, kernel_size=1, bias=True),
-            nn.Sigmoid(),
-        )
-        self._init_gate(self.low_gate)
-        self._init_gate(self.high_gate)
-
-        # self.low_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
-        # self.high_value = nn.Conv2d(dim, dim, kernel_size=1, bias=True)
-        self.fusion_proj = nn.Conv2d(
-            dim * 2, out_dim, kernel_size=1, bias=True
-        )
+        self._init_gate(gate)
+        return gate
 
     def _init_gate(self, gate):
         pointwise = gate[2]
@@ -242,26 +249,41 @@ class HighLowFrequencyReciprocalMambaBlock(nn.Module):
             pointwise.weight.zero_()
             pointwise.bias.fill_(-4.0)
 
-    def forward(self, low_feature, high_feature):
-        if low_feature.shape != high_feature.shape:
+    def forward(
+        self,
+        ir_low_feature,
+        ir_high_feature,
+        vi_low_feature,
+        vi_high_feature,
+    ):
+        features = (
+            ir_low_feature,
+            ir_high_feature,
+            vi_low_feature,
+            vi_high_feature,
+        )
+        if any(feature.shape != ir_low_feature.shape for feature in features[1:]):
             raise ValueError(
-                f"low_feature and high_feature must have the same shape, got "
-                f"{low_feature.shape} and {high_feature.shape}."
+                'IR/VI low/high features must have the same shape, got '
+                f'{[feature.shape for feature in features]}.'
             )
-        # 归一化特征只用于生成可信图
-        low_normed  = self.low_norm(low_feature)
-        high_normed  = self.high_norm(high_feature)
-        
-        low_context = self.low_mamba(low_normed)
-        high_context = self.high_mamba(high_normed)
-        low_attention = self.low_gate(low_context)
-        high_attention = self.high_gate(high_context)
 
+        ir_low_attention = self.ir_low_gate(
+            self.ir_low_mamba(self.ir_low_norm(ir_low_feature)))
+        vi_low_attention = self.vi_low_gate(
+            self.vi_low_mamba(self.vi_low_norm(vi_low_feature)))
+        ir_high_attention = self.ir_high_gate(
+            self.ir_high_mamba(self.ir_high_norm(ir_high_feature)))
+        vi_high_attention = self.vi_high_gate(
+            self.vi_high_mamba(self.vi_high_norm(vi_high_feature)))
 
-        # low_content = self.low_value(low_feature)
-        # high_content = self.high_value(high_feature)
-        # 可信图直接调制对方的原始频率特征
-        high_enhanced = high_feature * low_attention + high_feature 
-        low_enhanced = low_feature * high_attention + low_feature
+        ir_low_enhanced = ir_low_feature * vi_low_attention + ir_low_feature
+        vi_low_enhanced = vi_low_feature * ir_low_attention + vi_low_feature
+        ir_high_enhanced = ir_high_feature * vi_high_attention + ir_high_feature
+        vi_high_enhanced = vi_high_feature * ir_high_attention + vi_high_feature
 
-        return self.fusion_proj(torch.cat([low_enhanced, high_enhanced], dim=1))
+        ir_enhanced = self.ir_fusion_proj(torch.cat(
+            [ir_low_enhanced, ir_high_enhanced], dim=1))
+        vi_enhanced = self.vi_fusion_proj(torch.cat(
+            [vi_low_enhanced, vi_high_enhanced], dim=1))
+        return ir_enhanced, vi_enhanced
