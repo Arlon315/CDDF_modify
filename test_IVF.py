@@ -1,4 +1,6 @@
 from net import (
+    ENCODER_GLOBAL_LOCAL_SEMANTICS,
+    require_cddfuse_global_local_checkpoint,
     build_cddfuse_modules,
     fuse_base_features,
     fuse_detail_features,
@@ -6,9 +8,9 @@ from net import (
     infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_base_feature,
-    infer_cddfuse_encoder_detail_feature,
-    infer_cddfuse_encoder_detail_enhance_layers,
+    infer_cddfuse_encoder_global_feature,
+    infer_cddfuse_encoder_local_feature,
+    infer_cddfuse_encoder_local_enhance_layers,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
 )
@@ -131,7 +133,10 @@ def main():
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(args.ckpt_path, map_location=device)
+        require_cddfuse_global_local_checkpoint(checkpoint)
         use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
+        if not use_new_fusion:
+            raise ValueError('Checkpoint does not use the current GLCM fusion structure.')
         if (use_new_fusion and checkpoint.get('modal_enhance_structure')
                 != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
             raise ValueError(
@@ -143,9 +148,9 @@ def main():
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
-            encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
-            encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
+            encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
+            encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
+            encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
             gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
             decoder_block=infer_cddfuse_decoder_block(checkpoint),
@@ -207,37 +212,37 @@ def main():
                 data_IR,data_VIS = torch.FloatTensor(data_IR),torch.FloatTensor(data_VIS)
                 data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
 
-                feature_V_B, feature_V_D, feature_V = Encoder(data_VIS)
-                feature_I_B, feature_I_D, feature_I = Encoder(data_IR)
+                feature_V_G, feature_V_L, feature_V = Encoder(data_VIS)
+                feature_I_G, feature_I_L, feature_I = Encoder(data_IR)
                 if use_new_fusion:
                     feature_I_E, feature_V_E = ModalEnhanceLayer(
-                        feature_I_B, feature_I_D, feature_V_B, feature_V_D)
+                        feature_I_G, feature_I_L, feature_V_G, feature_V_L)
                     feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
                     decoder_input = get_decoder_residual_input(
                         checkpoint.get('decoder_residual', 'none'), data_IR, data_VIS)
                     data_Fuse, out_enc_level0 = Decoder(decoder_input, fused_feature=feature_F_E)
                     feature_vis = {
-                        "feature_V_H": feature_V_D,
-                        "feature_I_H": feature_I_D,
-                        "feature_V_L": feature_V_B,
-                        "feature_I_L": feature_I_B,
+                        "feature_V_L": feature_V_L,
+                        "feature_I_L": feature_I_L,
+                        "feature_V_G": feature_V_G,
+                        "feature_I_G": feature_I_G,
                         "feature_V_E": feature_V_E,
                         "feature_I_E": feature_I_E,
                         "out_enc_level0": out_enc_level0,
                     }
                 else:
-                    feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
-                    feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
+                    feature_F_G = fuse_base_features(BaseFuseLayer, feature_I_G, feature_V_G)
+                    feature_F_L = fuse_detail_features(DetailFuseLayer, feature_I_L, feature_V_L)
                     if use_fmem:
-                        feature_F_E = FMEMLayer(feature_F_D, feature_F_B)
+                        feature_F_E = FMEMLayer(feature_F_L, feature_F_G)
                         data_Fuse, out_enc_level0 = Decoder(data_VIS, fused_feature=feature_F_E)
                     else:
-                        data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_B, feature_F_D)
+                        data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_G, feature_F_L)
                     feature_vis = {
-                        "feature_V_D": feature_V_D,
-                        "feature_I_D": feature_I_D,
-                        "feature_V_B": feature_V_B,
-                        "feature_I_B": feature_I_B,
+                        "feature_V_L": feature_V_L,
+                        "feature_I_L": feature_I_L,
+                        "feature_V_G": feature_V_G,
+                        "feature_I_G": feature_I_G,
                         "out_enc_level0": out_enc_level0,
                     }
                 save_feature_visualizations(feature_vis, img_name, feature_vis_folder, max_channels=args.feature_channels)

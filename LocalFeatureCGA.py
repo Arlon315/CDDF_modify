@@ -25,14 +25,14 @@ class SingleInputCGAEnhance(nn.Module):
         initial = x
         pattn1 = self.sa(initial) + self.ca(initial)
         pattn2 = self.pa(initial, pattn1)
-        fused_detail = pattn2 * x
-        result = initial + fused_detail
+        fused_local = pattn2 * x
+        result = initial + fused_local
         return self.conv(result)
 
 
-class AKDECGAHighFrequencyExtraction(nn.Module):
+class AKDECGALocalFeatureExtraction(nn.Module):
     def __init__(self, dim=64, reduction=8):
-        super(AKDECGAHighFrequencyExtraction, self).__init__()
+        super(AKDECGALocalFeatureExtraction, self).__init__()
         self.akdeconv = AKDEConv(dim)
         self.cga = SingleInputCGAEnhance(dim=dim, reduction=reduction)
 

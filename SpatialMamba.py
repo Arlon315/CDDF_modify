@@ -124,13 +124,13 @@ class SpatialMambaBaseLayer(nn.Module):
         return x
 
 
-class SpatialMambaBaseFeature(nn.Module):
+class SpatialMambaGlobalFeature(nn.Module):
     def __init__(self,
                  dim=64,
                  num_layers=1,
                  ffn_expansion_factor=1.0,
                  share_mamba=False):
-        super(SpatialMambaBaseFeature, self).__init__()
+        super(SpatialMambaGlobalFeature, self).__init__()
         self.layers = nn.ModuleList([
             SpatialMambaBaseLayer(
                 dim=dim,

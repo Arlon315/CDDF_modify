@@ -348,9 +348,9 @@ class CDDFuseAdapter(BaseFusionAdapter):
                 infer_cddfuse_gmem_share_mode,
                 infer_cddfuse_backbone,
                 infer_cddfuse_decoder_block,
-                infer_cddfuse_encoder_base_feature,
-                infer_cddfuse_encoder_detail_feature,
-                infer_cddfuse_encoder_detail_enhance_layers,
+                infer_cddfuse_encoder_global_feature,
+                infer_cddfuse_encoder_local_feature,
+                infer_cddfuse_encoder_local_enhance_layers,
                 infer_cddfuse_detail_fusion,
                 infer_cddfuse_detail_num_layers,
             )
@@ -366,9 +366,9 @@ class CDDFuseAdapter(BaseFusionAdapter):
             infer_cddfuse_backbone(checkpoint),
             detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
             detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
-            encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
-            encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
+            encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
+            encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
+            encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
             base_fusion=infer_cddfuse_base_fusion(checkpoint),
             gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
             decoder_block=infer_cddfuse_decoder_block(checkpoint))
@@ -450,11 +450,11 @@ class CDDFuseAdapter(BaseFusionAdapter):
         )
         with torch.inference_mode():
             with amp_context:
-                feature_v_b, feature_v_d, _ = self.encoder(vis_tensor)
-                feature_i_b, feature_i_d, _ = self.encoder(ir_tensor)
-                feature_f_b = self.fuse_base_features(self.base_fuse, feature_i_b, feature_v_b)
-                feature_f_d = self.fuse_detail_features(self.detail_fuse, feature_i_d, feature_v_d)
-                fused_tensor, _ = self.decoder(decoder_input, feature_f_b, feature_f_d)
+                feature_v_g, feature_v_l, _ = self.encoder(vis_tensor)
+                feature_i_g, feature_i_l, _ = self.encoder(ir_tensor)
+                feature_f_g = self.fuse_base_features(self.base_fuse, feature_i_g, feature_v_g)
+                feature_f_l = self.fuse_detail_features(self.detail_fuse, feature_i_l, feature_v_l)
+                fused_tensor, _ = self.decoder(decoder_input, feature_f_g, feature_f_l)
                 fused_tensor = self._normalize_output(fused_tensor)
 
         fused = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(np.float32, copy=False)

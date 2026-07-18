@@ -7,6 +7,8 @@ Import packages
 '''
 
 from net import (
+    ENCODER_GLOBAL_LOCAL_SEMANTICS,
+    require_cddfuse_global_local_checkpoint,
     build_cddfuse_modules,
     fuse_base_features,
     fuse_detail_features,
@@ -14,11 +16,11 @@ from net import (
     infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_base_feature,
-    infer_cddfuse_encoder_detail_feature,
+    infer_cddfuse_encoder_global_feature,
+    infer_cddfuse_encoder_local_feature,
     infer_cddfuse_detail_fusion,
-    resolve_cddfuse_encoder_base_feature,
-    resolve_cddfuse_encoder_detail_feature,
+    resolve_cddfuse_encoder_global_feature,
+    resolve_cddfuse_encoder_local_feature,
     resolve_cddfuse_decoder_block,
 )
 from utils.dataset import H5Dataset
@@ -64,16 +66,16 @@ parser.add_argument(
     help="Use the NAF-style fast backbone or the Restormer encoder backbone.",
 )
 parser.add_argument(
-    "--encoder_base_feature",
-    choices=("auto", "spatial_mamba", "base"),
+    "--encoder_global_feature",
+    choices=("auto", "spatial_mamba", "global"),
     default="auto",
-    help="Encoder base branch. auto uses Spatial Mamba for restormer and NAF for fast.",
+    help="Encoder global branch. auto uses Spatial Mamba for restormer and NAF for fast.",
 )
 parser.add_argument(
-    "--encoder_detail_feature",
+    "--encoder_local_feature",
     choices=("auto", "INN", "INN+DEConv", "INN+AKDEConv", "AKDEConv+CGA"),
     default="auto",
-    help="Encoder detail branch. auto keeps INN+DEConv; INN uses three INN nodes; INN+AKDEConv adds an AKConv detail branch.",
+    help="Encoder local branch. auto keeps INN+DEConv; INN uses three INN nodes; INN+AKDEConv adds an AKConv detail branch.",
 )
 parser.add_argument(
     "--decoder_block",
@@ -101,18 +103,18 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-encoder_base_feature = resolve_cddfuse_encoder_base_feature(args.encoder_base_feature, args.backbone)
-encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(args.encoder_detail_feature)
+encoder_global_feature = resolve_cddfuse_encoder_global_feature(args.encoder_global_feature, args.backbone)
+encoder_local_feature = resolve_cddfuse_encoder_local_feature(args.encoder_local_feature)
 decoder_block = resolve_cddfuse_decoder_block(args.decoder_block, args.backbone)
 decoder_block_suffix = "" if args.backbone == "fast" and decoder_block == "naf" else f"_{decoder_block}"
-encoder_base_suffix = "" if encoder_base_feature in ("base", "naf") else f"_{encoder_base_feature}"
-encoder_detail_suffix = f"_{encoder_detail_feature.replace('+', '_')}"
+encoder_global_suffix = "" if encoder_global_feature in ("global", "naf") else f"_{encoder_global_feature}"
+encoder_local_suffix = f"_{encoder_local_feature.replace('+', '_')}"
 base_fusion_suffix = (
     f"_gmem_{args.gmem_share_mode}"
     if args.base_fusion == "gmem"
     else ("" if args.base_fusion == "base" else f"_{args.base_fusion}")
 )
-model_str = f"{args.backbone}{encoder_base_suffix}{encoder_detail_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}"
+model_str = f"{args.backbone}{encoder_global_suffix}{encoder_local_suffix}{decoder_block_suffix}_{args.detail_fusion}{base_fusion_suffix}"
 
 # . Set the hyper-parameters for training
 num_epochs = 120 # total epoch
@@ -139,8 +141,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
     args.backbone,
     detail_fusion=args.detail_fusion,
-    encoder_base_feature=encoder_base_feature,
-    encoder_detail_feature=encoder_detail_feature,
+    encoder_global_feature=encoder_global_feature,
+    encoder_local_feature=encoder_local_feature,
     base_fusion=args.base_fusion,
     gmem_share_mode=args.gmem_share_mode,
     decoder_block=decoder_block,
@@ -193,17 +195,18 @@ def build_checkpoint(epoch):
     return {
         'epoch': epoch,
         'timestamp': timestamp,
+        'encoder_feature_semantics': ENCODER_GLOBAL_LOCAL_SEMANTICS,
         'backbone': args.backbone,
-        'encoder_base_feature': encoder_base_feature,
-        'encoder_detail_feature': encoder_detail_feature,
+        'encoder_global_feature': encoder_global_feature,
+        'encoder_local_feature': encoder_local_feature,
         'decoder_block': decoder_block,
         'detail_fusion': args.detail_fusion,
         'base_fusion': args.base_fusion,
         'gmem_share_mode': args.gmem_share_mode,
         'accumulation_steps': accumulation_steps,
-        'encoder_detail_enhance': 'akdeconv_cga' if encoder_detail_feature == 'AKDEConv+CGA' else ('akdeconv' if encoder_detail_feature == 'INN+AKDEConv' else ('deconv' if encoder_detail_feature == 'INN+DEConv' else None)),
-        'encoder_detail_enhance_layers': 0 if encoder_detail_feature == 'AKDEConv+CGA' else (2 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0),
-        'encoder_detail_num_layers': 0 if encoder_detail_feature == 'AKDEConv+CGA' else (1 if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 3),
+        'encoder_local_enhance': 'akdeconv_cga' if encoder_local_feature == 'AKDEConv+CGA' else ('akdeconv' if encoder_local_feature == 'INN+AKDEConv' else ('deconv' if encoder_local_feature == 'INN+DEConv' else None)),
+        'encoder_local_enhance_layers': 0 if encoder_local_feature == 'AKDEConv+CGA' else (2 if encoder_local_feature in ('INN+DEConv', 'INN+AKDEConv') else 0),
+        'encoder_local_num_layers': 0 if encoder_local_feature == 'AKDEConv+CGA' else (1 if encoder_local_feature in ('INN+DEConv', 'INN+AKDEConv') else 3),
         'decoder_freq_enhance': 'dynamic_filter',
         'detail_fusion_num_layers': get_detail_fusion_num_layers(),
         'DIDF_Encoder': DIDF_Encoder.state_dict(),
@@ -315,20 +318,21 @@ def load_scheduler_if_present(scheduler, checkpoint, key):
 if args.resume:
     resume_path = os.path.expanduser(args.resume)
     checkpoint = torch.load(resume_path, map_location=device)
+    require_cddfuse_global_local_checkpoint(checkpoint)
     checkpoint_backbone = infer_cddfuse_backbone(checkpoint)
     if checkpoint_backbone != args.backbone:
         raise ValueError(
             f"Checkpoint backbone is '{checkpoint_backbone}', but current --backbone is '{args.backbone}'."
         )
     checkpoint_decoder_block = infer_cddfuse_decoder_block(checkpoint, checkpoint_backbone)
-    checkpoint_encoder_base_feature = infer_cddfuse_encoder_base_feature(checkpoint)
-    checkpoint_encoder_detail_feature = infer_cddfuse_encoder_detail_feature(checkpoint)
+    checkpoint_encoder_global_feature = infer_cddfuse_encoder_global_feature(checkpoint)
+    checkpoint_encoder_local_feature = infer_cddfuse_encoder_local_feature(checkpoint)
     checkpoint_detail_fusion = infer_cddfuse_detail_fusion(checkpoint)
     checkpoint_base_fusion = infer_cddfuse_base_fusion(checkpoint)
     checkpoint_gmem_share_mode = infer_cddfuse_gmem_share_mode(checkpoint)
     decoder_block_matches = checkpoint_decoder_block == decoder_block
-    encoder_base_feature_matches = checkpoint_encoder_base_feature == encoder_base_feature
-    encoder_detail_feature_matches = checkpoint_encoder_detail_feature == encoder_detail_feature
+    encoder_global_feature_matches = checkpoint_encoder_global_feature == encoder_global_feature
+    encoder_local_feature_matches = checkpoint_encoder_local_feature == encoder_local_feature
     detail_fusion_matches = checkpoint_detail_fusion == args.detail_fusion
     gmem_share_mode_matches = (
         checkpoint_base_fusion != 'gmem'
@@ -340,20 +344,20 @@ if args.resume:
     if resume_mode == "auto":
         resume_mode = (
             "full"
-            if decoder_block_matches and encoder_base_feature_matches and encoder_detail_feature_matches and detail_fusion_matches and base_fusion_matches
+            if decoder_block_matches and encoder_global_feature_matches and encoder_local_feature_matches and detail_fusion_matches and base_fusion_matches
             else "pretrain"
         )
 
     if resume_mode == "full":
-        if not encoder_base_feature_matches:
+        if not encoder_global_feature_matches:
             raise ValueError(
-                f"Checkpoint encoder_base_feature is '{checkpoint_encoder_base_feature}', "
-                f"but current --encoder_base_feature resolves to '{encoder_base_feature}'."
+                f"Checkpoint encoder_global_feature is '{checkpoint_encoder_global_feature}', "
+                f"but current --encoder_global_feature resolves to '{encoder_global_feature}'."
             )
-        if not encoder_detail_feature_matches:
+        if not encoder_local_feature_matches:
             raise ValueError(
-                f"Checkpoint encoder_detail_feature is '{checkpoint_encoder_detail_feature}', "
-                f"but current --encoder_detail_feature resolves to '{encoder_detail_feature}'."
+                f"Checkpoint encoder_local_feature is '{checkpoint_encoder_local_feature}', "
+                f"but current --encoder_local_feature resolves to '{encoder_local_feature}'."
             )
         if not decoder_block_matches:
             raise ValueError(
@@ -398,17 +402,17 @@ if args.resume:
         print(f"Resumed full checkpoint from {resume_path} at epoch {start_epoch}.")
     else:
         skipped_resume_parts = []
-        if not encoder_base_feature_matches:
-            skipped_resume_parts.append('DIDF_Encoder baseFeature weights/optimizer1/scheduler1')
+        if not encoder_global_feature_matches:
+            skipped_resume_parts.append('DIDF_Encoder globalFeature weights/optimizer1/scheduler1')
             print(
-                f"Partially loaded DIDF_Encoder: checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
-                f"current encoder_base_feature='{encoder_base_feature}'."
+                f"Partially loaded DIDF_Encoder: checkpoint encoder_global_feature='{checkpoint_encoder_global_feature}', "
+                f"current encoder_global_feature='{encoder_global_feature}'."
             )
-        if not encoder_detail_feature_matches:
-            skipped_resume_parts.append('DIDF_Encoder detailFeature weights/optimizer1/scheduler1')
+        if not encoder_local_feature_matches:
+            skipped_resume_parts.append('DIDF_Encoder localFeature weights/optimizer1/scheduler1')
             print(
-                f"Partially loaded DIDF_Encoder: checkpoint encoder_detail_feature='{checkpoint_encoder_detail_feature}', "
-                f"current encoder_detail_feature='{encoder_detail_feature}'."
+                f"Partially loaded DIDF_Encoder: checkpoint encoder_local_feature='{checkpoint_encoder_local_feature}', "
+                f"current encoder_local_feature='{encoder_local_feature}'."
             )
         if not decoder_block_matches:
             skipped_resume_parts.append('DIDF_Decoder block weights/optimizer2/scheduler2')
@@ -433,7 +437,7 @@ if args.resume:
                 f"Skipped DetailFuseLayer: checkpoint detail_fusion='{checkpoint_detail_fusion}', "
                 f"current detail_fusion='{args.detail_fusion}'."
             )
-        if encoder_base_feature_matches:
+        if encoder_global_feature_matches:
             load_optimizer_if_present(optimizer1, checkpoint, 'optimizer1')
             load_scheduler_if_present(scheduler1, checkpoint, 'scheduler1')
         if decoder_block_matches:
@@ -446,8 +450,8 @@ if args.resume:
         skipped_message = ', '.join(skipped_resume_parts)
         print(
             f"Loaded Phase I pretrain from {resume_path}: "
-            f"checkpoint encoder_base_feature='{checkpoint_encoder_base_feature}', "
-            f"current encoder_base_feature='{encoder_base_feature}'; "
+            f"checkpoint encoder_global_feature='{checkpoint_encoder_global_feature}', "
+            f"current encoder_global_feature='{encoder_global_feature}'; "
             f"checkpoint decoder_block='{checkpoint_decoder_block}', current decoder_block='{decoder_block}'; "
             f"checkpoint detail_fusion='{checkpoint_detail_fusion}', current detail_fusion='{args.detail_fusion}'; "
             f"checkpoint base_fusion='{checkpoint_base_fusion}', current base_fusion='{args.base_fusion}'. "
@@ -484,13 +488,13 @@ for epoch in range(start_epoch, num_epochs):
         should_step = ((i + 1) % accumulation_steps == 0) or (i + 1 == num_batches)
 
         if epoch < epoch_gap: #Phase I
-            feature_V_B, feature_V_D, _ = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, _ = DIDF_Encoder(data_IR)
-            data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_B, feature_V_D)
-            data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_B, feature_I_D)
+            feature_V_G, feature_V_L, _ = DIDF_Encoder(data_VIS)
+            feature_I_G, feature_I_L, _ = DIDF_Encoder(data_IR)
+            data_VIS_hat, _ = DIDF_Decoder(data_VIS, feature_V_G, feature_V_L)
+            data_IR_hat, _ = DIDF_Decoder(data_IR, feature_I_G, feature_I_L)
 
-            cc_loss_B = cc(feature_V_B, feature_I_B)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
+            cc_loss_B = cc(feature_V_G, feature_I_G)
+            cc_loss_D = cc(feature_V_L, feature_I_L)
             mse_loss_V = 5 * Loss_ssim(data_VIS, data_VIS_hat) + MSELoss(data_VIS, data_VIS_hat)
             mse_loss_I = 5 * Loss_ssim(data_IR, data_IR_hat) + MSELoss(data_IR, data_IR_hat)
 
@@ -513,18 +517,18 @@ for epoch in range(start_epoch, num_epochs):
                 optimizer1.zero_grad()
                 optimizer2.zero_grad()
         else:  #Phase II
-            feature_V_B, feature_V_D, feature_V = DIDF_Encoder(data_VIS)
-            feature_I_B, feature_I_D, feature_I = DIDF_Encoder(data_IR)
-            feature_F_B = fuse_base_features(BaseFuseLayer, feature_I_B, feature_V_B)
-            feature_F_D = fuse_detail_features(DetailFuseLayer, feature_I_D, feature_V_D)
-            data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_B, feature_F_D)  
+            feature_V_G, feature_V_L, feature_V = DIDF_Encoder(data_VIS)
+            feature_I_G, feature_I_L, feature_I = DIDF_Encoder(data_IR)
+            feature_F_G = fuse_base_features(BaseFuseLayer, feature_I_G, feature_V_G)
+            feature_F_L = fuse_detail_features(DetailFuseLayer, feature_I_L, feature_V_L)
+            data_Fuse, feature_F = DIDF_Decoder(data_VIS, feature_F_G, feature_F_L)
 
             
             mse_loss_V = 5*Loss_ssim(data_VIS, data_Fuse) + MSELoss(data_VIS, data_Fuse)
             mse_loss_I = 5*Loss_ssim(data_IR,  data_Fuse) + MSELoss(data_IR,  data_Fuse)
 
-            cc_loss_B = cc(feature_V_B, feature_I_B)
-            cc_loss_D = cc(feature_V_D, feature_I_D)
+            cc_loss_B = cc(feature_V_G, feature_I_G)
+            cc_loss_D = cc(feature_V_L, feature_I_L)
             loss_decomp =   (cc_loss_D) ** 2 / (1.01 + cc_loss_B)  
             fusionloss, _,_ ,_  = criteria_fusion(data_VIS, data_IR, data_Fuse)
             

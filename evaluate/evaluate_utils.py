@@ -32,11 +32,11 @@ from net import (  # noqa: E402
     infer_cddfuse_gmem_share_mode,
     infer_cddfuse_backbone,
     infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_base_feature,
-    infer_cddfuse_encoder_detail_feature,
+    infer_cddfuse_encoder_global_feature,
+    infer_cddfuse_encoder_local_feature,
     infer_cddfuse_detail_fusion,
     infer_cddfuse_detail_num_layers,
-    infer_cddfuse_encoder_detail_enhance_layers,
+    infer_cddfuse_encoder_local_enhance_layers,
 )
 from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint  # noqa: E402
 from GLCM_Mamba import (  # noqa: E402
@@ -88,7 +88,10 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
         return cached
 
     checkpoint = torch.load(str(model_file), map_location=device)
+    require_cddfuse_global_local_checkpoint(checkpoint)
     use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
+    if not use_new_fusion:
+        raise ValueError('Checkpoint does not use the current GLCM fusion structure.')
     if (use_new_fusion and checkpoint.get('modal_enhance_structure')
             != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
         raise ValueError(
@@ -98,9 +101,9 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
         infer_cddfuse_backbone(checkpoint),
         detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
         detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-        encoder_detail_enhance_layers=infer_cddfuse_encoder_detail_enhance_layers(checkpoint),
-        encoder_base_feature=infer_cddfuse_encoder_base_feature(checkpoint),
-        encoder_detail_feature=infer_cddfuse_encoder_detail_feature(checkpoint),
+        encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
+        encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
+        encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
         base_fusion=infer_cddfuse_base_fusion(checkpoint),
         gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
         decoder_block=infer_cddfuse_decoder_block(checkpoint),
@@ -363,21 +366,21 @@ def run_fusion_prediction(
     decoder_input = _build_decoder_input(decoder_input_mode, vis_tensor, ir_tensor)
 
     with torch.no_grad():
-        feature_v_b, feature_v_d, _ = bundle["encoder"](vis_tensor)
-        feature_i_b, feature_i_d, _ = bundle["encoder"](ir_tensor)
+        feature_v_g, feature_v_l, _ = bundle["encoder"](vis_tensor)
+        feature_i_g, feature_i_l, _ = bundle["encoder"](ir_tensor)
         if bundle.get("use_new_fusion", False):
             feature_i_e, feature_v_e = bundle["modal_enhance"](
-                feature_i_b, feature_i_d, feature_v_b, feature_v_d)
+                feature_i_g, feature_i_l, feature_v_g, feature_v_l)
             feature_f_e = bundle["cross_mamba_fusion"](feature_i_e, feature_v_e)
             fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
         else:
-            feature_f_b = fuse_base_features(bundle["base_fuse"], feature_i_b, feature_v_b)
-            feature_f_d = fuse_detail_features(bundle["detail_fuse"], feature_i_d, feature_v_d)
+            feature_f_g = fuse_base_features(bundle["base_fuse"], feature_i_g, feature_v_g)
+            feature_f_l = fuse_detail_features(bundle["detail_fuse"], feature_i_l, feature_v_l)
             if bundle["fmem"] is not None:
-                feature_f_e = bundle["fmem"](feature_f_d, feature_f_b)
+                feature_f_e = bundle["fmem"](feature_f_l, feature_f_g)
                 fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
             else:
-                fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_b, feature_f_d)
+                fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_g, feature_f_l)
         fused_tensor = _normalize_fused_tensor(fused_tensor)
 
     fused_float01 = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(np.float32, copy=False)

@@ -3,8 +3,20 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from SpatialMamba import SpatialMambaBaseFeature
+from SpatialMamba import SpatialMambaGlobalFeature
 from GMEM import GlobalMambaEnhanceModel, infer_gmem_share_mode
+
+
+ENCODER_GLOBAL_LOCAL_SEMANTICS = 'global_local'
+
+
+def require_cddfuse_global_local_checkpoint(checkpoint):
+    semantics = checkpoint.get('encoder_feature_semantics') if isinstance(checkpoint, dict) else None
+    if semantics != ENCODER_GLOBAL_LOCAL_SEMANTICS:
+        raise ValueError(
+            'Checkpoint does not use the required global-local encoder semantics. '
+            'Legacy checkpoints are not supported on this branch.'
+        )
 
 
 def rearrange(x, pattern, **kwargs):
@@ -756,13 +768,13 @@ class CGAFusion(nn.Module):
         initial = x + y
         pattn1 = self.sa(initial) + self.ca(initial)
         pattn2 = self.pa(initial, pattn1)
-        fused_detail = pattn2 * x + (1.0 - pattn2) * y
+        fused_local = pattn2 * x + (1.0 - pattn2) * y
 
         if self.preserve_sum_range:
-            correction = fused_detail - 0.5 * initial
+            correction = fused_local - 0.5 * initial
             result = initial + torch.tanh(self.detail_residual_scale) * correction
         else:
-            result = initial + fused_detail
+            result = initial + fused_local
         return self.conv(result)
 
 
@@ -770,18 +782,18 @@ def _unwrap_module(module):
     return module.module if isinstance(module, nn.DataParallel) else module
 
 
-def fuse_base_features(base_fuse_layer, feature_i_b, feature_v_b):
+def fuse_base_features(base_fuse_layer, feature_i_g, feature_v_g):
     module = _unwrap_module(base_fuse_layer)
     if getattr(module, 'dual_input', False):
-        return base_fuse_layer(feature_i_b, feature_v_b)
-    return base_fuse_layer(feature_i_b + feature_v_b)
+        return base_fuse_layer(feature_i_g, feature_v_g)
+    return base_fuse_layer(feature_i_g + feature_v_g)
 
 
-def fuse_detail_features(detail_fuse_layer, feature_i_d, feature_v_d):
+def fuse_detail_features(detail_fuse_layer, feature_i_l, feature_v_l):
     module = _unwrap_module(detail_fuse_layer)
     if getattr(module, 'dual_input', False):
-        return detail_fuse_layer(feature_i_d, feature_v_d)
-    return detail_fuse_layer(feature_i_d + feature_v_d)
+        return detail_fuse_layer(feature_i_l, feature_v_l)
+    return detail_fuse_layer(feature_i_l + feature_v_l)
 
 # =============================================================================
 
@@ -1106,35 +1118,35 @@ def make_feature_blocks(block_type, dim, num_blocks, num_heads, ffn_expansion_fa
     raise ValueError(f"Unsupported block_type: {block_type}")
 
 
-def resolve_cddfuse_encoder_base_feature(encoder_base_feature=None, backbone='restormer'):
+def resolve_cddfuse_encoder_global_feature(encoder_global_feature=None, backbone='restormer'):
     backbone = str(backbone or 'restormer').lower()
-    encoder_base_feature = str(encoder_base_feature or 'auto').lower()
+    encoder_global_feature = str(encoder_global_feature or 'auto').lower()
     if backbone == 'fast':
-        if encoder_base_feature in ('auto', 'naf', 'fast'):
+        if encoder_global_feature in ('auto', 'naf', 'fast'):
             return 'naf'
-        raise ValueError(f"Unsupported encoder_base_feature for fast backbone: {encoder_base_feature}")
-    if encoder_base_feature == 'auto':
+        raise ValueError(f"Unsupported encoder_global_feature for fast backbone: {encoder_global_feature}")
+    if encoder_global_feature == 'auto':
         return 'spatial_mamba'
-    if encoder_base_feature in ('spatial_mamba', 'spatialmamba', 'mamba'):
+    if encoder_global_feature in ('spatial_mamba', 'spatialmamba', 'mamba'):
         return 'spatial_mamba'
-    if encoder_base_feature in ('base', 'attention', 'base_attention', 'restormer'):
-        return 'base'
-    raise ValueError(f"Unsupported encoder_base_feature: {encoder_base_feature}")
+    if encoder_global_feature in ('global', 'attention', 'global_attention', 'restormer'):
+        return 'global'
+    raise ValueError(f"Unsupported encoder_global_feature: {encoder_global_feature}")
 
 
-def resolve_cddfuse_encoder_detail_feature(encoder_detail_feature=None):
-    encoder_detail_feature = str(encoder_detail_feature or 'auto').lower()
-    if encoder_detail_feature == 'auto':
+def resolve_cddfuse_encoder_local_feature(encoder_local_feature=None):
+    encoder_local_feature = str(encoder_local_feature or 'auto').lower()
+    if encoder_local_feature == 'auto':
         return 'INN+DEConv'
-    if encoder_detail_feature == 'inn':
+    if encoder_local_feature == 'inn':
         return 'INN'
-    if encoder_detail_feature in ('inn+deconv', 'inn_deconv'):
+    if encoder_local_feature in ('inn+deconv', 'inn_deconv'):
         return 'INN+DEConv'
-    if encoder_detail_feature in ('inn+akdeconv', 'inn_akdeconv'):
+    if encoder_local_feature in ('inn+akdeconv', 'inn_akdeconv'):
         return 'INN+AKDEConv'
-    if encoder_detail_feature in ('akde_cga', 'akdecga', 'akdeconv_cga', 'akdeconv+cga'):
+    if encoder_local_feature in ('akde_cga', 'akdecga', 'akdeconv_cga', 'akdeconv+cga'):
         return 'AKDEConv+CGA'
-    raise ValueError(f"Unsupported encoder_detail_feature: {encoder_detail_feature}")
+    raise ValueError(f"Unsupported encoder_local_feature: {encoder_local_feature}")
 
 
 class Restormer_Encoder(nn.Module):
@@ -1148,9 +1160,9 @@ class Restormer_Encoder(nn.Module):
                  bias=False,
                  LayerNorm_type='WithBias',
                  block_type='restormer',
-                 detail_enhance_layers=2,
-                 encoder_base_feature='spatial_mamba',
-                 encoder_detail_feature='auto',
+                 local_enhance_layers=2,
+                 encoder_global_feature='spatial_mamba',
+                 encoder_local_feature='auto',
                  ):
 
         super(Restormer_Encoder, self).__init__()
@@ -1159,41 +1171,41 @@ class Restormer_Encoder(nn.Module):
 
         self.encoder_level1 = nn.Sequential(*make_feature_blocks(
             block_type, dim, num_blocks[0], heads[0], ffn_expansion_factor, bias, LayerNorm_type))
-        encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
+        encoder_local_feature = resolve_cddfuse_encoder_local_feature(encoder_local_feature)
         if str(block_type).lower() == 'naf':
-            self.baseFeature = NAFBlock(dim=dim)
+            self.globalFeature = NAFBlock(dim=dim)
         else:
-            encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, 'restormer')
-            if encoder_base_feature == 'spatial_mamba':
-                self.baseFeature = SpatialMambaBaseFeature(dim=dim, num_layers=1, share_mamba=False)
+            encoder_global_feature = resolve_cddfuse_encoder_global_feature(encoder_global_feature, 'restormer')
+            if encoder_global_feature == 'spatial_mamba':
+                self.globalFeature = SpatialMambaGlobalFeature(dim=dim, num_layers=1, share_mamba=False)
             else:
-                self.baseFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
-        if encoder_detail_feature == 'AKDEConv+CGA':
-            from HighFrequencyCGA import AKDECGAHighFrequencyExtraction
-            self.detailFeature = AKDECGAHighFrequencyExtraction(dim=dim)
-            self.detail_enhance_residual = False
-            self.detailEnhance = nn.Identity()
+                self.globalFeature = BaseFeatureExtraction(dim=dim, num_heads=heads[2])
+        if encoder_local_feature == 'AKDEConv+CGA':
+            from LocalFeatureCGA import AKDECGALocalFeatureExtraction
+            self.localFeature = AKDECGALocalFeatureExtraction(dim=dim)
+            self.local_enhance_residual = False
+            self.localEnhance = nn.Identity()
         else:
-            detail_num_layers = 3 if encoder_detail_feature == 'INN' else 1
-            self.detailFeature = DetailFeatureExtraction(num_layers=detail_num_layers)
-            detail_enhance_layers = int(detail_enhance_layers or 0) if encoder_detail_feature in ('INN+DEConv', 'INN+AKDEConv') else 0
-            self.detail_enhance_residual = encoder_detail_feature == 'INN+AKDEConv' and detail_enhance_layers > 0
-            if detail_enhance_layers > 0:
-                enhance_block = AKDEConv if encoder_detail_feature == 'INN+AKDEConv' else DEConv
-                self.detailEnhance = nn.Sequential(*[enhance_block(dim) for _ in range(detail_enhance_layers)])
+            local_num_layers = 3 if encoder_local_feature == 'INN' else 1
+            self.localFeature = DetailFeatureExtraction(num_layers=local_num_layers)
+            local_enhance_layers = int(local_enhance_layers or 0) if encoder_local_feature in ('INN+DEConv', 'INN+AKDEConv') else 0
+            self.local_enhance_residual = encoder_local_feature == 'INN+AKDEConv' and local_enhance_layers > 0
+            if local_enhance_layers > 0:
+                enhance_block = AKDEConv if encoder_local_feature == 'INN+AKDEConv' else DEConv
+                self.localEnhance = nn.Sequential(*[enhance_block(dim) for _ in range(local_enhance_layers)])
             else:
-                self.detailEnhance = nn.Identity()
+                self.localEnhance = nn.Identity()
              
     def forward(self, inp_img):
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
-        base_feature = self.baseFeature(out_enc_level1)
-        detail_feature = self.detailFeature(out_enc_level1)
-        if self.detail_enhance_residual:
-            detail_feature = detail_feature + self.detailEnhance(detail_feature)
+        global_feature = self.globalFeature(out_enc_level1)
+        local_feature = self.localFeature(out_enc_level1)
+        if self.local_enhance_residual:
+            local_feature = local_feature + self.localEnhance(local_feature)
         else:
-            detail_feature = self.detailEnhance(detail_feature)
-        return base_feature, detail_feature, out_enc_level1
+            local_feature = self.localEnhance(local_feature)
+        return global_feature, local_feature, out_enc_level1
 
 class Restormer_Decoder(nn.Module):
     def __init__(self,
@@ -1223,12 +1235,12 @@ class Restormer_Decoder(nn.Module):
                       stride=1, padding=1, bias=bias),)
         self.sigmoid = nn.Sigmoid()              
 
-    def forward(self, inp_img, base_feature=None, detail_feature=None, fused_feature=None):
+    def forward(self, inp_img, global_feature=None, local_feature=None, fused_feature=None):
         if fused_feature is None:
-            if base_feature is None or detail_feature is None:
+            if global_feature is None or local_feature is None:
                 raise ValueError(
-                    "base_feature and detail_feature are required when fused_feature is not provided.")
-            out_enc_level0 = torch.cat((base_feature, detail_feature), dim=1)
+                    "global_feature and local_feature are required when fused_feature is not provided.")
+            out_enc_level0 = torch.cat((global_feature, local_feature), dim=1)
             out_enc_level0 = self.reduce_channel(out_enc_level0)
         else:
             out_enc_level0 = fused_feature
@@ -1256,7 +1268,7 @@ def _build_detail_fusion_module(detail_fusion, detail_fusion_num_layers=1):
     detail_fusion = str(detail_fusion or 'cga').lower()
     if detail_fusion == 'cga':
         return CGAFusion(dim=64)
-    if detail_fusion in ('inn', 'detail', 'detail_feature'):
+    if detail_fusion in ('inn', 'detail', 'local_feature'):
         return DetailFeatureExtraction(num_layers=int(detail_fusion_num_layers or 1))
     raise ValueError(f"Unsupported detail_fusion: {detail_fusion}")
 
@@ -1301,24 +1313,24 @@ def build_cddfuse_modules(
     backbone='restormer',
     detail_fusion='cga',
     detail_fusion_num_layers=1,
-    encoder_detail_enhance_layers=2,
-    encoder_base_feature='auto',
-    encoder_detail_feature='auto',
+    encoder_local_enhance_layers=2,
+    encoder_global_feature='auto',
+    encoder_local_feature='auto',
     base_fusion='base',
     gmem_share_mode='independent',
     decoder_block='auto',
 ):
     backbone = str(backbone or 'restormer').lower()
     decoder_block = resolve_cddfuse_decoder_block(decoder_block, backbone)
-    encoder_base_feature = resolve_cddfuse_encoder_base_feature(encoder_base_feature, backbone)
-    encoder_detail_feature = resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
+    encoder_global_feature = resolve_cddfuse_encoder_global_feature(encoder_global_feature, backbone)
+    encoder_local_feature = resolve_cddfuse_encoder_local_feature(encoder_local_feature)
     if backbone == 'fast':
         if decoder_block != 'naf':
             raise ValueError("backbone='fast' only supports decoder_block='auto' or 'naf'.")
         return (
             FastRestormer_Encoder(
-                detail_enhance_layers=encoder_detail_enhance_layers,
-                encoder_detail_feature=encoder_detail_feature,
+                local_enhance_layers=encoder_local_enhance_layers,
+                encoder_local_feature=encoder_local_feature,
             ),
             FastRestormer_Decoder(),
             _build_base_fusion_module(base_fusion, backbone, gmem_share_mode),
@@ -1327,9 +1339,9 @@ def build_cddfuse_modules(
     if backbone == 'restormer':
         return (
             Restormer_Encoder(
-                detail_enhance_layers=encoder_detail_enhance_layers,
-                encoder_base_feature=encoder_base_feature,
-                encoder_detail_feature=encoder_detail_feature,
+                local_enhance_layers=encoder_local_enhance_layers,
+                encoder_global_feature=encoder_global_feature,
+                encoder_local_feature=encoder_local_feature,
             ),
             Restormer_Decoder(block_type=decoder_block),
             _build_base_fusion_module(base_fusion, backbone, gmem_share_mode),
@@ -1351,63 +1363,63 @@ def infer_cddfuse_backbone(checkpoint):
 
     if any(str(key).startswith('encoder_level1.') and '.conv1.' in str(key) for key in keys):
         return 'fast'
-    if any(str(key).startswith('baseFeature.') and str(key).endswith(('beta', 'gamma')) for key in keys):
+    if any(str(key).startswith('globalFeature.') and str(key).endswith(('beta', 'gamma')) for key in keys):
         return 'fast'
     if any(str(key).startswith('encoder_level1.') and '.attn.' in str(key) for key in keys):
         return 'restormer'
-    if any(str(key).startswith('baseFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
+    if any(str(key).startswith('globalFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
         return 'restormer'
-    if any(str(key).startswith('baseFeature.attn.') for key in keys):
+    if any(str(key).startswith('globalFeature.attn.') for key in keys):
         return 'restormer'
 
     return 'restormer'
 
 
-def infer_cddfuse_encoder_base_feature(checkpoint):
+def infer_cddfuse_encoder_global_feature(checkpoint):
     backbone = infer_cddfuse_backbone(checkpoint)
-    encoder_base_feature = checkpoint.get('encoder_base_feature') if isinstance(checkpoint, dict) else None
-    if encoder_base_feature:
-        return resolve_cddfuse_encoder_base_feature(encoder_base_feature, backbone)
+    encoder_global_feature = checkpoint.get('encoder_global_feature') if isinstance(checkpoint, dict) else None
+    if encoder_global_feature:
+        return resolve_cddfuse_encoder_global_feature(encoder_global_feature, backbone)
 
     if backbone == 'fast':
         return 'naf'
 
     encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(encoder_state)
-    if any(str(key).startswith('baseFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
+    if any(str(key).startswith('globalFeature.layers.') or '.spatial_mamba.' in str(key) for key in keys):
         return 'spatial_mamba'
-    if any(str(key).startswith('baseFeature.attn.') for key in keys):
+    if any(str(key).startswith('globalFeature.attn.') for key in keys):
         return 'base'
 
-    return resolve_cddfuse_encoder_base_feature('auto', backbone)
+    return resolve_cddfuse_encoder_global_feature('auto', backbone)
 
 
-def infer_cddfuse_encoder_detail_feature(checkpoint):
-    encoder_detail_feature = checkpoint.get('encoder_detail_feature') if isinstance(checkpoint, dict) else None
-    if encoder_detail_feature:
-        return resolve_cddfuse_encoder_detail_feature(encoder_detail_feature)
+def infer_cddfuse_encoder_local_feature(checkpoint):
+    encoder_local_feature = checkpoint.get('encoder_local_feature') if isinstance(checkpoint, dict) else None
+    if encoder_local_feature:
+        return resolve_cddfuse_encoder_local_feature(encoder_local_feature)
 
     encoder_state = checkpoint.get('DIDF_Encoder', {}) if isinstance(checkpoint, dict) else {}
     keys = _strip_module_prefixes(encoder_state)
     if (
-        any(str(key).startswith('detailFeature.akdeconv.') for key in keys)
-        and any(str(key).startswith('detailFeature.cga.') for key in keys)
+        any(str(key).startswith('localFeature.akdeconv.') for key in keys)
+        and any(str(key).startswith('localFeature.cga.') for key in keys)
     ):
         return 'AKDEConv+CGA'
-    if any(str(key).startswith('detailEnhance.') and '.conv1_6.' in str(key) for key in keys):
+    if any(str(key).startswith('localEnhance.') and '.conv1_6.' in str(key) for key in keys):
         return 'INN+AKDEConv'
-    if any(str(key).startswith('detailEnhance.') for key in keys):
+    if any(str(key).startswith('localEnhance.') for key in keys):
         return 'INN+DEConv'
 
-    detail_layer_indices = []
+    local_layer_indices = []
     for key in keys:
         parts = str(key).split('.')
-        if len(parts) > 2 and parts[0] == 'detailFeature' and parts[1] == 'net' and parts[2].isdigit():
-            detail_layer_indices.append(int(parts[2]))
-    if detail_layer_indices and max(detail_layer_indices) + 1 >= 3:
+        if len(parts) > 2 and parts[0] == 'localFeature' and parts[1] == 'net' and parts[2].isdigit():
+            local_layer_indices.append(int(parts[2]))
+    if local_layer_indices and max(local_layer_indices) + 1 >= 3:
         return 'INN'
 
-    return resolve_cddfuse_encoder_detail_feature('auto')
+    return resolve_cddfuse_encoder_local_feature('auto')
 
 
 def infer_cddfuse_detail_fusion(checkpoint):
@@ -1494,8 +1506,8 @@ def infer_cddfuse_detail_num_layers(checkpoint):
     return max(layer_indices) + 1 if layer_indices else 1
 
 
-def infer_cddfuse_encoder_detail_enhance_layers(checkpoint):
-    num_layers = checkpoint.get('encoder_detail_enhance_layers') if isinstance(checkpoint, dict) else None
+def infer_cddfuse_encoder_local_enhance_layers(checkpoint):
+    num_layers = checkpoint.get('encoder_local_enhance_layers') if isinstance(checkpoint, dict) else None
     if num_layers is not None:
         return int(num_layers)
 
@@ -1503,7 +1515,7 @@ def infer_cddfuse_encoder_detail_enhance_layers(checkpoint):
     layer_indices = []
     for key in _strip_module_prefixes(encoder_state):
         parts = str(key).split('.')
-        if len(parts) > 2 and parts[0] == 'detailEnhance' and parts[1].isdigit():
+        if len(parts) > 2 and parts[0] == 'localEnhance' and parts[1].isdigit():
             layer_indices.append(int(parts[1]))
     return max(layer_indices) + 1 if layer_indices else 0
     
