@@ -1,35 +1,9 @@
-from net import (
-    ENCODER_GLOBAL_LOCAL_SEMANTICS,
-    require_cddfuse_global_local_checkpoint,
-    build_cddfuse_modules,
-    fuse_base_features,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_gmem_share_mode,
-    infer_cddfuse_backbone,
-    infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_global_feature,
-    infer_cddfuse_encoder_local_feature,
-    infer_cddfuse_encoder_local_enhance_layers,
-    infer_cddfuse_detail_fusion,
-    infer_cddfuse_detail_num_layers,
-)
-from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
-from GLCM_Mamba import (
-    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
-    GlobalLocalCrossModalMambaBlock,
-)
-from CMFB import (
-    CommenMambaFusionBlock,
-    get_decoder_residual_input,
-    infer_cross_mamba_share_mode,
-    is_cross_mamba_fusion_checkpoint,
-)
+from network.model_loader import build_current_glcm_model
+
 import argparse
 import os
 import numpy as np
 import torch
-import torch.nn as nn
 from utils.img_read_save import img_save,image_read_cv2
 import warnings
 import logging
@@ -39,7 +13,7 @@ logging.basicConfig(level=logging.CRITICAL)
 
 FEATURE_VIS_CHANNELS = 8
 FEATURE_GRID_COLS = 4
-DEFAULT_CKPT_PATH = r"models/Res_CGA_DEConv/CDDFuse_restormer_cga_deconv2_05-19-20-20_epoch_050.pth"
+DEFAULT_CKPT_PATH = None
 DEFAULT_DATASETS = ["TNO", "RoadScene"]
 
 
@@ -98,7 +72,7 @@ def save_feature_visualizations(feature_dict, img_name, save_root, max_channels=
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ckpt-path', default=DEFAULT_CKPT_PATH)
+    parser.add_argument('--ckpt-path', default=DEFAULT_CKPT_PATH, required=True)
     parser.add_argument('--datasets', nargs='+', default=DEFAULT_DATASETS)
     parser.add_argument('--img-name', default=None, help='Only infer one named image, for example 01.png.')
     parser.add_argument('--limit', type=int, default=None, help='Infer the first N images in each dataset.')
@@ -124,7 +98,7 @@ def main():
 
     for dataset_name in args.datasets:
         print("\n"*2+"="*80)
-        model_name="CDDFuse    "
+        model_name="GLoC-Mamba"
         print("The test result of "+dataset_name+' :')
         test_folder=os.path.join('test_img',dataset_name)
         test_out_folder=os.path.join('test_result',dataset_name)
@@ -133,76 +107,12 @@ def main():
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         checkpoint = torch.load(args.ckpt_path, map_location=device)
-        require_cddfuse_global_local_checkpoint(checkpoint)
-        use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
-        if not use_new_fusion:
-            raise ValueError('Checkpoint does not use the current GLCM fusion structure.')
-        if (use_new_fusion and checkpoint.get('modal_enhance_structure')
-                != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
-            raise ValueError(
-                'Checkpoint does not use the cross-modal global-local ModalEnhanceLayer.')
-        use_fmem = 'FMEMLayer' in checkpoint and not use_new_fusion
-        if use_fmem and not is_cmem_checkpoint(checkpoint):
-            raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
-        encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
-            infer_cddfuse_backbone(checkpoint),
-            detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
-            encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
-            encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
-            base_fusion=infer_cddfuse_base_fusion(checkpoint),
-            gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
-            decoder_block=infer_cddfuse_decoder_block(checkpoint),
-        )
-        Encoder = nn.DataParallel(encoder_module).to(device)
-        Decoder = nn.DataParallel(decoder_module).to(device)
-        BaseFuseLayer = None
-        DetailFuseLayer = None
-        ModalEnhanceLayer = None
-        CrossMambaFusionLayer = None
-        FMEMLayer = None
-        if use_new_fusion:
-            ModalEnhanceLayer = nn.DataParallel(
-                GlobalLocalCrossModalMambaBlock(dim=64)
-            ).to(device)
-            CrossMambaFusionLayer = nn.DataParallel(
-                CommenMambaFusionBlock(
-                    dim=64,
-                    share_mode=infer_cross_mamba_share_mode(checkpoint),
-                )
-            ).to(device)
-        else:
-            BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
-            DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
-            if use_fmem:
-                FMEMLayer = nn.DataParallel(
-                    CrossMambaEnhanceModule(
-                        dim=64,
-                        share_mamba=infer_cmem_share_mamba(checkpoint),
-                    )
-                ).to(device)
+        model = build_current_glcm_model(checkpoint, device, data_parallel=True)
+        Encoder = model['encoder']
+        Decoder = model['decoder']
+        ModalEnhanceLayer = model['modal_enhance']
+        CrossMambaFusionLayer = model['cross_mamba_fusion']
 
-        Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
-        Decoder.load_state_dict(checkpoint['DIDF_Decoder'], strict=False)
-        if use_new_fusion:
-            ModalEnhanceLayer.load_state_dict(checkpoint['ModalEnhanceLayer'])
-            CrossMambaFusionLayer.load_state_dict(checkpoint['CrossMambaFusionLayer'], strict=False)
-        else:
-            BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
-            DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
-            if use_fmem:
-                FMEMLayer.load_state_dict(checkpoint['FMEMLayer'])
-        Encoder.eval()
-        Decoder.eval()
-        if use_new_fusion:
-            ModalEnhanceLayer.eval()
-            CrossMambaFusionLayer.eval()
-        else:
-            BaseFuseLayer.eval()
-            DetailFuseLayer.eval()
-            if use_fmem:
-                FMEMLayer.eval()
         with torch.no_grad():
             for img_name in image_names:
 
@@ -212,39 +122,21 @@ def main():
                 data_IR,data_VIS = torch.FloatTensor(data_IR),torch.FloatTensor(data_VIS)
                 data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
 
-                feature_V_G, feature_V_L, feature_V = Encoder(data_VIS)
-                feature_I_G, feature_I_L, feature_I = Encoder(data_IR)
-                if use_new_fusion:
-                    feature_I_E, feature_V_E = ModalEnhanceLayer(
-                        feature_I_G, feature_I_L, feature_V_G, feature_V_L)
-                    feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
-                    decoder_input = get_decoder_residual_input(
-                        checkpoint.get('decoder_residual', 'none'), data_IR, data_VIS)
-                    data_Fuse, out_enc_level0 = Decoder(decoder_input, fused_feature=feature_F_E)
-                    feature_vis = {
-                        "feature_V_L": feature_V_L,
-                        "feature_I_L": feature_I_L,
-                        "feature_V_G": feature_V_G,
-                        "feature_I_G": feature_I_G,
-                        "feature_V_E": feature_V_E,
-                        "feature_I_E": feature_I_E,
-                        "out_enc_level0": out_enc_level0,
-                    }
-                else:
-                    feature_F_G = fuse_base_features(BaseFuseLayer, feature_I_G, feature_V_G)
-                    feature_F_L = fuse_detail_features(DetailFuseLayer, feature_I_L, feature_V_L)
-                    if use_fmem:
-                        feature_F_E = FMEMLayer(feature_F_L, feature_F_G)
-                        data_Fuse, out_enc_level0 = Decoder(data_VIS, fused_feature=feature_F_E)
-                    else:
-                        data_Fuse, out_enc_level0 = Decoder(data_VIS, feature_F_G, feature_F_L)
-                    feature_vis = {
-                        "feature_V_L": feature_V_L,
-                        "feature_I_L": feature_I_L,
-                        "feature_V_G": feature_V_G,
-                        "feature_I_G": feature_I_G,
-                        "out_enc_level0": out_enc_level0,
-                    }
+                feature_V_G, feature_V_L, _ = Encoder(data_VIS)
+                feature_I_G, feature_I_L, _ = Encoder(data_IR)
+                feature_I_E, feature_V_E = ModalEnhanceLayer(
+                    feature_I_G, feature_I_L, feature_V_G, feature_V_L)
+                feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
+                data_Fuse, out_enc_level0 = Decoder(feature_F_E)
+                feature_vis = {
+                    'feature_V_L': feature_V_L,
+                    'feature_I_L': feature_I_L,
+                    'feature_V_G': feature_V_G,
+                    'feature_I_G': feature_I_G,
+                    'feature_V_E': feature_V_E,
+                    'feature_I_E': feature_I_E,
+                    'out_enc_level0': out_enc_level0,
+                }
                 save_feature_visualizations(feature_vis, img_name, feature_vis_folder, max_channels=args.feature_channels)
                 data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
                 fi = np.uint8(np.round(np.squeeze((data_Fuse * 255).cpu().numpy())))

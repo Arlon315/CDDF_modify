@@ -13,10 +13,10 @@ Recommended copy strategy across projects:
 If the target project's runner already supports a common callable shape, no code
 changes are required. Prefer passing `--runner module:function` or
 `--runner path\\to\\file.py:function` before editing this file.
-项目默认值在 batch_evaluate.py (line 95)，
-runner 参数适配在 batch_evaluate.py (line 314)，
-runner 返回值适配在 batch_evaluate.py (line 346)，
-批量评估主流程在 batch_evaluate.py (line 615)。
+椤圭洰榛樿鍊煎湪 batch_evaluate.py (line 95)锛?
+runner 鍙傛暟閫傞厤鍦?batch_evaluate.py (line 314)锛?
+runner 杩斿洖鍊奸€傞厤鍦?batch_evaluate.py (line 346)锛?
+鎵归噺璇勪及涓绘祦绋嬪湪 batch_evaluate.py (line 615)銆?
 """
 
 from __future__ import annotations
@@ -104,35 +104,35 @@ def get_project_defaults() -> Mapping[str, object]:
                 "vis_dir": "test_img/TNO/vi",
                 "num_pairs": 1,
                 "task": "ivf",
-                "default_model_path": "models/CDDFuse_IVF.pth",
+                "default_model_path": "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
             },
             "RoadScene": {
                 "ir_dir": "test_img/RoadScene/ir",
                 "vis_dir": "test_img/RoadScene/vi",
                 "num_pairs": 50,
                 "task": "ivf",
-                "default_model_path": "models/CDDFuse_IVF.pth",
+                "default_model_path": "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
             },
             "MRI_CT": {
                 "ir_dir": "test_img/MRI_CT/CT",
                 "vis_dir": "test_img/MRI_CT/MRI",
                 "num_pairs": 21,
                 "task": "mif",
-                "default_model_path": "models/CDDFuse_MIF.pth",
+                "default_model_path": "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
             },
             "MRI_PET": {
                 "ir_dir": "test_img/MRI_PET/PET",
                 "vis_dir": "test_img/MRI_PET/MRI",
                 "num_pairs": 42,
                 "task": "mif",
-                "default_model_path": "models/CDDFuse_MIF.pth",
+                "default_model_path": "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
             },
             "MRI_SPECT": {
                 "ir_dir": "test_img/MRI_SPECT/SPECT",
                 "vis_dir": "test_img/MRI_SPECT/MRI",
                 "num_pairs": 73,
                 "task": "mif",
-                "default_model_path": "models/CDDFuse_MIF.pth",
+                "default_model_path": "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
             },
             # "M3FD_Fusion": {
             #     "ir_dir": "image/M3FD_Fusion/ir",
@@ -174,7 +174,7 @@ def get_project_defaults() -> Mapping[str, object]:
             #     "vis_dir": "E:/workspace/python_work/dataSet/FMB/test/Visible",
             #     "num_pairs": 280,
             # },
-            # 服务器
+            # 鏈嶅姟鍣?
             "RoadScence": {
                 "ir_dir": os.path.expanduser(r"~/rivermind-data/dataSets/RoadScene/ir"),
                 "vis_dir": os.path.expanduser(r"~/rivermind-data/dataSets/RoadScene/vis"),
@@ -716,7 +716,7 @@ def save_results_table(results_df: pd.DataFrame, output_path: str, metadata: Map
 
 def build_arg_parser(project_defaults: Mapping[str, object]) -> argparse.ArgumentParser:
     datasets = project_defaults["datasets"]
-    parser = argparse.ArgumentParser(description="Batch evaluation for CDDFuse image-fusion models.")
+    parser = argparse.ArgumentParser(description="Batch evaluation for GLoC-Mamba image fusion.")
     parser.add_argument("--dataset", type=str, default=project_defaults["default_dataset"], choices=sorted(datasets))
     parser.add_argument("--ir_dir", type=str, default=None, help="Infrared directory; overrides --dataset.")
     parser.add_argument("--vis_dir", type=str, default=None, help="Visible directory; overrides --dataset.")

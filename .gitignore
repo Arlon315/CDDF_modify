@@ -239,3 +239,4 @@ test_img/
 .vscode/
 
 Metric_Python/
+tmp/

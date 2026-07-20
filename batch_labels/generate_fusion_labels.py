@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-批量生成红外/可见光数据集的融合标签。
+闂傚倷绀佺紞濠傤焽瑜忕槐鐐寸節閸パ囨７濠电偛妯婃禍婵嬪磻閵娾晜鐓熼柡鍐ㄥ亞閻掗箖鏌ｈ箛鎾村窛缂佽鲸甯楃粚閬嶅础閻愬吀鎮ｆ俊?闂傚倷绀侀幉锟犳偡椤栫偛鍨傞柣銏ゆ交缂嶆牠鏌涢埄鍐槈缂佲偓閸屾凹鐔嗛悹杞拌閸庢劖绻涢崼婵堝煟闁哄瞼鍠撻幏鐘诲灳閾忣偆褰庢繝鐢靛仜椤р偓缂佺姵鎹囬獮鍡涘礃椤旇偐顦板銈嗘閺侇噣宕戦幘瓒佹椽顢旈崟顔ф洟姊洪崜鎻掍簽闁哥姵鎹囧畷褰掓嚃閳哄啰锛滃┑鐐村灦椤ㄥ懐鈧艾閰ｉ弻?
 
-此文件设计为跨项目可携带：
-1. 保持数据集路由和批处理循环不变。
-2. 如果其他项目使用不同型号，只需更换适配器类。
-3. 重用CLI和输出布局逻辑，不动其他部分。
+濠电姵顔栭崰妤冪紦閸ф纾归柡宥庡幖閸戠娀鏌涢幇銊︽珖妞も晝鍏橀弻鐔碱敍閻愯弓鍠婇梺鍝ュ枎闁帮綁骞冪憴鍕婵炴潙顑呮禍楣冩煠閻撳骸顣虫い锔垮嵆閺岋綁鎮╅崗鍛板焻闂佸憡姊归崹鎸庝繆閺夋埈鍚嬪璺侯儏閸擃喖顪冮妶鍡樷拻闁告鍛闁哄被鍎查悡娆撴煟閹惧啿顒㈤柟顖氱墦閺岋綁濮€閳轰椒鍠婇梺?
+1. 婵犵數鍎戠徊钘壝洪敂鐐床闁告劦浜栭崑鎾诲垂椤愶綆妫冮悗娈垮櫘閸嬪﹪骞冭瀹曠厧鈹戦崼娑樹喊闂傚倸鍊搁崐绋课涘Δ鈧灋婵犲﹤鐗婇崕妤€螖閿濆懎鏆為柛瀣ㄥ姂閺屾稑螖閸愩劋娌柣搴㈢閻擄繝寮婚悢鍏煎仺闁割煈鍋勫▓灞筋渻閵堝繗鍚傞柡鍛█楠炲啴宕奸弴鐐茶€垮┑掳鍊撶粈渚€宕滈悜鑺モ拺缂備焦顭囬惌銈夋煕椤垵鐏ｇ紒顕呭幗瀵板嫰骞囬鍌滃幀婵犵妲呴崹宕囨兜閸洖纾?
+2. 婵犵數濮烽。浠嬪焵椤掆偓閸熷潡鍩€椤掆偓缂嶅﹪骞冨Ο璇茬窞闁归偊鍓涢ˇ褔姊洪崫鍕ⅱ闁轰焦鎮傞弻褔宕掑鍏煎瘜闂侀潧鐗嗛幊蹇曟嫻閳╁啰绠鹃柤纰卞墮椤ｅジ鏌熷畡鐗堝櫧闁圭懓瀚版俊鎼佹晜閼恒儺鍚傛繝鐢靛仦閸ㄥ爼骞愰崫銉х煋闁圭虎鍠栫粻鏍煙閹规劦鍤欓柛銊ュ€块幃妤呮晲鎼存繄鐩庢繝鐢靛仜濞差參寮婚妸銉㈡婵☆垰鐏濋顓㈡偡濠婂嫬惟闁搞儺鐓堝鍧楁⒑闁偛鑻晶瀵糕偓娈垮枛椤曨參鍩€椤掍胶鈯曢柨姘跺箹閺夋埊韬慨濠冩そ椤㈡洟濮€閻橆偄浜鹃柛褎顨呴崒銊╂煏閸繍妲搁梻鍌ゅ灦閺屾洘绻涜濡厼顭囬崼鏇熲拺?
+3. 闂傚倸鍊烽悞锕併亹閸愵亞鐭撻柛顐ｆ礀閺嬩焦銇勯妷锝呰緟I闂傚倷绀侀幉锛勫垝瀹€鍕剹濞达絿鍎ら鑺ャ亜閹惧崬鐏╃紒鈧崟顖涚厱婵犻潧妫楅顐ｃ亜韫囨梹灏﹂柟顔斤耿閹瑩鍩℃担宄邦棜闂傚倸鍊风欢锟犲磻閸涱厙锝夊箳閺冣偓椤愯姤銇勯幇鍫曟闁哄拋鍓熼幃姗€鎮欑捄杞版睏闂佽崵鍠愮换鍫ュ蓟濞戙垹妫橀悹鍥ㄥ絻椤牓姊洪崨濠勬噮闁稿鎸剧划瀣箳濡も偓閸愨偓濡炪倖鎸鹃崑娑欐叏閵堝鈷戦柛娑橈工缁楁帗淇婇銏ゅ弰闁糕斁鍋?
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 DEFAULT_DATA_ROOT = Path(r"E:\workspace\python_work\dataSet")
-DEFAULT_CHECKPOINT = "models/CDDFuse_IVF.pth"
+DEFAULT_CHECKPOINT = "models/GLoC-Mamba/GLoC-Mamba_latest.pth"
 DEFAULT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 
@@ -311,7 +311,7 @@ class BaseFusionAdapter:
         raise NotImplementedError
 
 
-class CDDFuseAdapter(BaseFusionAdapter):
+class GLoCMambaAdapter(BaseFusionAdapter):
     def __init__(
         self,
         checkpoint_path: Path,
@@ -323,71 +323,27 @@ class CDDFuseAdapter(BaseFusionAdapter):
         super().__init__(checkpoint_path, device, input_size, amp, decoder_input_mode)
         self.encoder = None
         self.decoder = None
-        self.base_fuse = None
-        self.detail_fuse = None
+        self.modal_enhance = None
+        self.cross_mamba_fusion = None
         self._loaded = False
-
-    @staticmethod
-    def _strip_module_prefix(state_dict: Mapping[str, object]) -> Dict[str, object]:
-        cleaned: Dict[str, object] = {}
-        for key, value in state_dict.items():
-            key_text = str(key)
-            cleaned[key_text[7:] if key_text.startswith("module.") else key_text] = value
-        return cleaned
 
     def load(self) -> None:
         if self._loaded:
             return
 
         try:
-            from net import (  # pylint: disable=import-outside-toplevel
-                build_cddfuse_modules,
-                fuse_base_features,
-                fuse_detail_features,
-                infer_cddfuse_base_fusion,
-                infer_cddfuse_gmem_share_mode,
-                infer_cddfuse_backbone,
-                infer_cddfuse_decoder_block,
-                infer_cddfuse_encoder_global_feature,
-                infer_cddfuse_encoder_local_feature,
-                infer_cddfuse_encoder_local_enhance_layers,
-                infer_cddfuse_detail_fusion,
-                infer_cddfuse_detail_num_layers,
-            )
+            from network.model_loader import build_current_glcm_model
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                f"Missing dependency '{exc.name}' required by the current CDDFuse adapter. "
-                "Install the project inference dependencies before running label generation."
+                f"Missing dependency '{exc.name}' required by GLoC-Mamba."
             ) from exc
 
         checkpoint = torch.load(str(self.checkpoint_path), map_location=self.device)
-
-        self.encoder, self.decoder, self.base_fuse, self.detail_fuse = build_cddfuse_modules(
-            infer_cddfuse_backbone(checkpoint),
-            detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
-            encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
-            encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
-            base_fusion=infer_cddfuse_base_fusion(checkpoint),
-            gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
-            decoder_block=infer_cddfuse_decoder_block(checkpoint))
-        self.fuse_base_features = fuse_base_features
-        self.fuse_detail_features = fuse_detail_features
-        self.encoder = self.encoder.to(self.device)
-        self.decoder = self.decoder.to(self.device)
-        self.base_fuse = self.base_fuse.to(self.device)
-        self.detail_fuse = self.detail_fuse.to(self.device)
-
-        self.encoder.load_state_dict(self._strip_module_prefix(checkpoint["DIDF_Encoder"]))
-        self.decoder.load_state_dict(self._strip_module_prefix(checkpoint["DIDF_Decoder"]))
-        self.base_fuse.load_state_dict(self._strip_module_prefix(checkpoint["BaseFuseLayer"]))
-        self.detail_fuse.load_state_dict(self._strip_module_prefix(checkpoint["DetailFuseLayer"]))
-
-        self.encoder.eval()
-        self.decoder.eval()
-        self.base_fuse.eval()
-        self.detail_fuse.eval()
+        model = build_current_glcm_model(checkpoint, self.device, data_parallel=False)
+        self.encoder = model['encoder']
+        self.decoder = model['decoder']
+        self.modal_enhance = model['modal_enhance']
+        self.cross_mamba_fusion = model['cross_mamba_fusion']
         self._loaded = True
 
     def _read_gray(self, path: Path) -> np.ndarray:
@@ -396,19 +352,24 @@ class CDDFuseAdapter(BaseFusionAdapter):
             raise FileNotFoundError(path)
         if self.input_size is None or image.shape[:2] == self.input_size:
             return image
-        return cv2.resize(image, (self.input_size[1], self.input_size[0]), interpolation=cv2.INTER_LINEAR)
+        return cv2.resize(
+            image,
+            (self.input_size[1], self.input_size[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
 
     def _to_tensor(self, image_u8: np.ndarray) -> torch.Tensor:
         array = image_u8.astype(np.float32, copy=False) / 255.0
         tensor = torch.from_numpy(array).unsqueeze(0).unsqueeze(0)
-        return tensor.to(self.device, non_blocking=self.device.startswith("cuda"))
+        return tensor.to(self.device, non_blocking=self.device.startswith('cuda'))
 
-    def _resolve_decoder_input_mode(self) -> str:
-        if self.decoder_input_mode and self.decoder_input_mode != "auto":
-            if self.decoder_input_mode not in {"visible", "sum", "none"}:
-                raise ValueError(f"Unsupported decoder input mode: {self.decoder_input_mode}")
-            return self.decoder_input_mode
-        return "none" if "MIF" in self.checkpoint_path.stem.upper() else "visible"
+    def _validate_decoder_input_mode(self) -> None:
+        mode = self.decoder_input_mode or 'auto'
+        if mode not in {'auto', 'none'}:
+            raise ValueError(
+                "GLoC-Mamba uses decoder_input_mode='none'; "
+                f"received {self.decoder_input_mode!r}."
+            )
 
     @staticmethod
     def _normalize_output(tensor: torch.Tensor) -> torch.Tensor:
@@ -420,52 +381,51 @@ class CDDFuseAdapter(BaseFusionAdapter):
         self.load()
         assert self.encoder is not None
         assert self.decoder is not None
-        assert self.base_fuse is not None
-        assert self.detail_fuse is not None
+        assert self.modal_enhance is not None
+        assert self.cross_mamba_fusion is not None
+        self._validate_decoder_input_mode()
 
         ir_image = self._read_gray(ir_path)
         vis_image = self._read_gray(vis_path)
         if ir_image.shape != vis_image.shape:
             raise ValueError(
-                f"Input pair shape mismatch: {ir_path.name}={ir_image.shape}, {vis_path.name}={vis_image.shape}"
+                f"Input pair shape mismatch: {ir_path.name}={ir_image.shape}, "
+                f"{vis_path.name}={vis_image.shape}"
             )
 
         ir_tensor = self._to_tensor(ir_image)
         vis_tensor = self._to_tensor(vis_image)
-        decoder_input_mode = self._resolve_decoder_input_mode()
-
-        if decoder_input_mode == "visible":
-            decoder_input = vis_tensor
-        elif decoder_input_mode == "sum":
-            decoder_input = vis_tensor + ir_tensor
-        elif decoder_input_mode == "none":
-            decoder_input = None
-        else:
-            raise ValueError(f"Unsupported decoder input mode: {decoder_input_mode}")
-
         amp_context = (
-            torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True)
+            torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True)
             if self.amp
             else contextlib.nullcontext()
         )
-        with torch.inference_mode():
-            with amp_context:
-                feature_v_g, feature_v_l, _ = self.encoder(vis_tensor)
-                feature_i_g, feature_i_l, _ = self.encoder(ir_tensor)
-                feature_f_g = self.fuse_base_features(self.base_fuse, feature_i_g, feature_v_g)
-                feature_f_l = self.fuse_detail_features(self.detail_fuse, feature_i_l, feature_v_l)
-                fused_tensor, _ = self.decoder(decoder_input, feature_f_g, feature_f_l)
-                fused_tensor = self._normalize_output(fused_tensor)
 
-        fused = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(np.float32, copy=False)
+        with torch.inference_mode(), amp_context:
+            feature_v_g, feature_v_l, _ = self.encoder(vis_tensor)
+            feature_i_g, feature_i_l, _ = self.encoder(ir_tensor)
+            feature_i_e, feature_v_e = self.modal_enhance(
+                feature_i_g,
+                feature_i_l,
+                feature_v_g,
+                feature_v_l,
+            )
+            fused_feature = self.cross_mamba_fusion(feature_i_e, feature_v_e)
+            fused_tensor, _ = self.decoder(fused_feature)
+            fused_tensor = self._normalize_output(fused_tensor)
+
+        fused = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(
+            np.float32,
+            copy=False,
+        )
         return np.clip(fused, 0.0, 1.0)
 
 
 def build_adapter(args: argparse.Namespace, checkpoint_path: Path, device: str) -> BaseFusionAdapter:
     adapter_name = str(args.adapter).strip().lower()
-    if adapter_name != "cddfuse":
+    if adapter_name != "gloc-mamba":
         raise ValueError(f"Unsupported adapter: {args.adapter}")
-    return CDDFuseAdapter(
+    return GLoCMambaAdapter(
         checkpoint_path=checkpoint_path,
         device=device,
         input_size=parse_hw(args.input_size),
@@ -503,7 +463,7 @@ class ProgressPrinter:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Batch-generate fusion labels with the current CDDFuse model.")
+    parser = argparse.ArgumentParser(description="Batch-generate fusion labels with GLoC-Mamba.")
     parser.add_argument("--dataset", type=str.lower, default="roadscene", choices=sorted(DATASET_SPECS))
     parser.add_argument("--data-root", type=str, default=str(DEFAULT_DATA_ROOT))
     parser.add_argument("--dataset-root", type=str, default=None, help="Override the selected dataset root.")
@@ -512,7 +472,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vis-dir", type=str, default=None, help="Custom visible folder; overrides dataset layout.")
     parser.add_argument("--output-dir", type=str, default=None, help="Label output directory.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Model checkpoint path.")
-    parser.add_argument("--adapter", type=str, default="cddfuse", help="Model adapter name.")
+    parser.add_argument("--adapter", type=str, default="gloc-mamba", help="Model adapter name.")
     parser.add_argument("--device", type=str, default="cuda", help="cuda | cuda:0 | cpu | auto")
     parser.add_argument(
         "--allow-cpu-fallback",
@@ -525,8 +485,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--decoder-input-mode",
         type=str,
         default="auto",
-        choices=("auto", "visible", "sum", "none"),
-        help="CDDFuse decoder input mode.",
+        choices=("auto", "none"),
+        help="GLoC-Mamba uses no decoder residual input.",
     )
     parser.add_argument(
         "--amp",

@@ -1,49 +1,17 @@
 import torch
 import torch.nn as nn
 
-from GMEM import GlobalMamba4Path
-from SpatialMamba import LayerNorm
-from net import AKCBlock
-
-
-CROSS_MAMBA_FUSION_STRUCTURE = 'glcm_mamba_common_mamba_private_akc'
-
-
-def is_cross_mamba_fusion_checkpoint(checkpoint):
-    if not isinstance(checkpoint, dict):
-        return False
-    return checkpoint.get('fusion_structure') == CROSS_MAMBA_FUSION_STRUCTURE
-
-
-def infer_cross_mamba_share_mode(checkpoint):
-    if isinstance(checkpoint, dict) and 'cross_mamba_share_mode' in checkpoint:
-        return str(checkpoint['cross_mamba_share_mode']).lower()
-    return 'independent'
-
-
-def get_decoder_residual_input(mode, data_ir, data_vis):
-    mode = str(mode or 'none').lower()
-    if mode == 'none':
-        return None
-    if mode == 'ir':
-        return data_ir
-    if mode == 'vis':
-        return data_vis
-    if mode == 'ir+vis':
-        return data_ir + data_vis
-    raise ValueError(f"Unsupported decoder residual mode: {mode}")
+from .CommonZMamba import GlobalMamba4Path
+from .SpatialMamba import LayerNorm
+from .net import AKCBlock
 
 
 class CommenMambaFusionBlock(nn.Module):
-    def __init__(self, dim=64, share_mode='independent', use_checkpoint=True):
+    def __init__(self, dim=64):
         super(CommenMambaFusionBlock, self).__init__()
         self.ir_norm = LayerNorm(dim, 'WithBias')
         self.vi_norm = LayerNorm(dim, 'WithBias')
-        self.cross_mixer = GlobalMamba4Path(
-            dim=dim,
-            share_mode=share_mode,
-            use_checkpoint=use_checkpoint,
-        )
+        self.cross_mixer = GlobalMamba4Path(dim=dim)
         self.ir_private = AKCBlock(dim)
         self.vi_private = AKCBlock(dim)
         self.fusion_proj = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=True)

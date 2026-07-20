@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from net import AKDEConv, ChannelAttention, PixelAttention, SpatialAttention
+from .net import AKDEConv, ChannelAttention, PixelAttention, SpatialAttention
 
 
 class SingleInputCGAEnhance(nn.Module):

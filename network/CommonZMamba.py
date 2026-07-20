@@ -5,8 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
-from SpatialMamba import LayerNorm
-
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 except ImportError:
@@ -16,23 +14,6 @@ try:
     from causal_conv1d import causal_conv1d_fn
 except ImportError:
     causal_conv1d_fn = None
-
-
-def _strip_module_prefix(key):
-    return key[7:] if isinstance(key, str) and key.startswith('module.') else key
-
-
-def infer_gmem_share_mode(checkpoint):
-    if isinstance(checkpoint, dict) and 'gmem_share_mode' in checkpoint:
-        return str(checkpoint['gmem_share_mode']).lower()
-
-    state_dict = checkpoint.get('BaseFuseLayer', {}) if isinstance(checkpoint, dict) else {}
-    keys = [_strip_module_prefix(key) for key in state_dict.keys()]
-    if any(str(key).startswith('global_mixer.axis_blocks.') for key in keys):
-        return 'axis'
-    if any(str(key).startswith('global_mixer.block.') for key in keys):
-        return 'all'
-    return 'independent'
 
 
 class CommonZMambaSeqBlock(nn.Module):
@@ -217,39 +198,15 @@ class CommonZMambaSeqBlock(nn.Module):
 
 
 class GlobalMamba4Path(nn.Module):
-    def __init__(self, dim=64, share_mode='independent', use_checkpoint=True):
+    def __init__(self, dim=64):
         super(GlobalMamba4Path, self).__init__()
-        share_mode = str(share_mode).lower()
-        if share_mode not in ('independent', 'axis', 'all'):
-            raise ValueError(f"Unsupported GMEM share mode: {share_mode}")
-
-        self.share_mode = share_mode
-        self.use_checkpoint = use_checkpoint
-        if share_mode == 'independent':
-            self.blocks = nn.ModuleList([
-                CommonZMambaSeqBlock(dim=dim),
-                CommonZMambaSeqBlock(dim=dim),
-                CommonZMambaSeqBlock(dim=dim),
-                CommonZMambaSeqBlock(dim=dim),
-            ])
-        elif share_mode == 'axis':
-            self.axis_blocks = nn.ModuleList([
-                CommonZMambaSeqBlock(dim=dim),
-                CommonZMambaSeqBlock(dim=dim),
-            ])
-        else:
-            self.block = CommonZMambaSeqBlock(dim=dim)
-
-
-    def _get_blocks(self):
-        if self.share_mode == 'independent':
-            return self.blocks[0], self.blocks[1], self.blocks[2], self.blocks[3]
-        if self.share_mode == 'axis':
-            return (
-                self.axis_blocks[0], self.axis_blocks[0],
-                self.axis_blocks[1], self.axis_blocks[1],
-            )
-        return self.block, self.block, self.block, self.block
+        self.use_checkpoint = True
+        self.blocks = nn.ModuleList([
+            CommonZMambaSeqBlock(dim=dim),
+            CommonZMambaSeqBlock(dim=dim),
+            CommonZMambaSeqBlock(dim=dim),
+            CommonZMambaSeqBlock(dim=dim),
+        ])
 
     def _run_block(self, block, ir_seq, vi_seq):
         if self.use_checkpoint and self.training and (
@@ -288,7 +245,7 @@ class GlobalMamba4Path(nn.Module):
         ir_v_rev = torch.flip(ir_v_fwd, dims=[1])
         vi_v_rev = torch.flip(vi_v_fwd, dims=[1])
 
-        h_fwd_block, h_rev_block, v_fwd_block, v_rev_block = self._get_blocks()
+        h_fwd_block, h_rev_block, v_fwd_block, v_rev_block = self.blocks
         ir_h_fwd, vi_h_fwd = self._run_block(
             h_fwd_block, ir_h_fwd, vi_h_fwd)
         ir_h_rev, vi_h_rev = self._run_block(
@@ -323,43 +280,3 @@ class GlobalMamba4Path(nn.Module):
         ir_long = (ir_h_fwd + ir_h_rev + ir_v_fwd + ir_v_rev)
         vi_long = (vi_h_fwd + vi_h_rev + vi_v_fwd + vi_v_rev)
         return ir_long, vi_long
-
-
-class GlobalMambaEnhanceModel(nn.Module):
-    dual_input = True
-
-    def __init__(self, dim=64, share_mode='independent', use_checkpoint=True):
-        super(GlobalMambaEnhanceModel, self).__init__()
-        self.ir_norm = LayerNorm(dim, 'WithBias')
-        self.vi_norm = LayerNorm(dim, 'WithBias')
-        self.global_mixer = GlobalMamba4Path(
-            dim=dim,
-            share_mode=share_mode,
-            use_checkpoint=use_checkpoint,
-        )
-        self.fusion_proj = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=True)
-        self._init_fusion_sum(dim)
-
-    def _init_fusion_sum(self, dim):
-        with torch.no_grad():
-            self.fusion_proj.weight.zero_()
-            for channel in range(dim):
-                self.fusion_proj.weight[channel, channel, 0, 0] = 1.0
-                self.fusion_proj.weight[channel, channel + dim, 0, 0] = 1.0
-            if self.fusion_proj.bias is not None:
-                self.fusion_proj.bias.zero_()
-
-    def forward(self, ir_base, vi_base):
-        if ir_base.shape != vi_base.shape:
-            raise ValueError(
-                f"ir_base and vi_base must have the same shape, got "
-                f"{ir_base.shape} and {vi_base.shape}."
-            )
-
-        ir_long, vi_long = self.global_mixer(
-            self.ir_norm(ir_base),
-            self.vi_norm(vi_base),
-        )
-        ir_enhanced = ir_base + ir_long
-        vi_enhanced = vi_base + vi_long
-        return self.fusion_proj(torch.cat((ir_enhanced, vi_enhanced), dim=1))

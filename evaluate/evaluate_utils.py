@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Utilities for evaluating CDDFuse models in this repository.
+Utilities for evaluating GLoC-Mamba in this repository.
 
 The main adapter is `run_fusion_prediction`, which matches the runner contract
 expected by `evaluate/batch_evaluate.py` while using the current project's
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -24,31 +24,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from net import (  # noqa: E402
-    require_cddfuse_global_local_checkpoint,
-    build_cddfuse_modules,
-    fuse_base_features,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_gmem_share_mode,
-    infer_cddfuse_backbone,
-    infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_global_feature,
-    infer_cddfuse_encoder_local_feature,
-    infer_cddfuse_detail_fusion,
-    infer_cddfuse_detail_num_layers,
-    infer_cddfuse_encoder_local_enhance_layers,
-)
-from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint  # noqa: E402
-from GLCM_Mamba import (  # noqa: E402
-    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
-    GlobalLocalCrossModalMambaBlock,
-)
-from CMFB import (  # noqa: E402
-    CommenMambaFusionBlock,
-    infer_cross_mamba_share_mode,
-    is_cross_mamba_fusion_checkpoint,
-)
+from network.model_loader import build_current_glcm_model  # noqa: E402
+
 
 try:
     from evaluate.performance import METRIC_COLUMNS, PAPER_PROFILE, compute_all_metrics  # type: ignore
@@ -74,13 +51,6 @@ def _normalize_device(device: str) -> str:
     return "cpu"
 
 
-def _strip_module_prefix(state_dict: Mapping[str, Any]) -> Dict[str, Any]:
-    cleaned: Dict[str, Any] = {}
-    for key, value in state_dict.items():
-        cleaned[key[7:] if key.startswith("module.") else key] = value
-    return cleaned
-
-
 def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
     model_file = _resolve_project_path(model_path).resolve()
     cache_key = (str(model_file), device)
@@ -89,84 +59,10 @@ def _load_model_bundle(model_path: str, device: str) -> Dict[str, Any]:
         return cached
 
     checkpoint = torch.load(str(model_file), map_location=device)
-    require_cddfuse_global_local_checkpoint(checkpoint)
-    use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
-    if not use_new_fusion:
-        raise ValueError('Checkpoint does not use the current GLCM fusion structure.')
-    if (use_new_fusion and checkpoint.get('modal_enhance_structure')
-            != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
-        raise ValueError(
-            'Checkpoint does not use the cross-modal global-local ModalEnhanceLayer.')
-
-    encoder, decoder, base_fuse, detail_fuse = build_cddfuse_modules(
-        infer_cddfuse_backbone(checkpoint),
-        detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-        detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-        encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
-        encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
-        encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
-        base_fusion=infer_cddfuse_base_fusion(checkpoint),
-        gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
-        decoder_block=infer_cddfuse_decoder_block(checkpoint),
-    )
-    encoder = encoder.to(device)
-    decoder = decoder.to(device)
-
-    base_fuse = None if use_new_fusion else base_fuse.to(device)
-    detail_fuse = None if use_new_fusion else detail_fuse.to(device)
-    modal_enhance = None
-    cross_mamba_fusion = None
-    fmem = None
-
-    if use_new_fusion:
-        modal_enhance = GlobalLocalCrossModalMambaBlock(dim=64).to(device)
-        cross_mamba_fusion = CommenMambaFusionBlock(
-            dim=64,
-            share_mode=infer_cross_mamba_share_mode(checkpoint),
-        ).to(device)
-    elif "FMEMLayer" in checkpoint:
-        if not is_cmem_checkpoint(checkpoint):
-            raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
-        fmem = CrossMambaEnhanceModule(
-            dim=64,
-            share_mamba=infer_cmem_share_mamba(checkpoint),
-        ).to(device)
-
-    encoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Encoder"]))
-    decoder.load_state_dict(_strip_module_prefix(checkpoint["DIDF_Decoder"]))
-    if use_new_fusion:
-        modal_enhance.load_state_dict(_strip_module_prefix(checkpoint["ModalEnhanceLayer"]))
-        cross_mamba_fusion.load_state_dict(_strip_module_prefix(checkpoint["CrossMambaFusionLayer"]), strict=False)
-    else:
-        base_fuse.load_state_dict(_strip_module_prefix(checkpoint["BaseFuseLayer"]))
-        detail_fuse.load_state_dict(_strip_module_prefix(checkpoint["DetailFuseLayer"]))
-        if fmem is not None:
-            fmem.load_state_dict(_strip_module_prefix(checkpoint["FMEMLayer"]))
-
-    encoder.eval()
-    decoder.eval()
-    if use_new_fusion:
-        modal_enhance.eval()
-        cross_mamba_fusion.eval()
-    else:
-        base_fuse.eval()
-        detail_fuse.eval()
-        if fmem is not None:
-            fmem.eval()
-
-    bundle = {
-        "encoder": encoder,
-        "decoder": decoder,
-        "base_fuse": base_fuse,
-        "detail_fuse": detail_fuse,
-        "modal_enhance": modal_enhance,
-        "cross_mamba_fusion": cross_mamba_fusion,
-        "fmem": fmem,
-        "use_new_fusion": use_new_fusion,
-        "decoder_residual": checkpoint.get("decoder_residual", "none"),
-    }
+    bundle = build_current_glcm_model(checkpoint, device, data_parallel=False)
     _MODEL_CACHE[cache_key] = bundle
     return bundle
+
 
 def _parse_hw(size_value: Any) -> Optional[Tuple[int, int]]:
     if size_value is None:
@@ -217,67 +113,6 @@ def _normalize_fused_tensor(tensor: torch.Tensor) -> torch.Tensor:
     return (tensor - min_value) / denom
 
 
-def _is_medical_task(ir_path: str, vis_path: str, fusion_params: Mapping[str, Any]) -> bool:
-    task = str(fusion_params.get("task") or fusion_params.get("task_type") or "").strip().lower()
-    if task:
-        return task == "mif"
-
-    parts = {part.upper() for part in Path(ir_path).parts + Path(vis_path).parts}
-    medical_tokens = {"MRI_CT", "MRI_PET", "MRI_SPECT", "MRI", "CT", "PET", "SPECT"}
-    return bool(parts.intersection(medical_tokens))
-
-
-def _normalize_decoder_input_mode(mode: Any) -> str:
-    text = str(mode or "none").strip().lower()
-    if text in {"visible", "vis", "vi"}:
-        return "visible"
-    if text == "ir":
-        return "ir"
-    if text in {"sum", "ir+vis", "vis+ir", "ir_vi", "vi_ir"}:
-        return "sum"
-    if text == "none":
-        return "none"
-    raise ValueError(f"Unsupported decoder input mode: {mode}")
-
-
-def _infer_decoder_input_mode(
-    model_path: str,
-    ir_path: str,
-    vis_path: str,
-    fusion_params: Mapping[str, Any],
-    checkpoint_decoder_residual: Any = None,
-    use_new_fusion: bool = False,
-) -> str:
-    override = fusion_params.get(
-        "decoder_input_mode",
-        fusion_params.get("decoder_mode", fusion_params.get("decoder_residual", "auto")),
-    )
-    mode = str(override).strip().lower()
-    if mode and mode != "auto":
-        return _normalize_decoder_input_mode(mode)
-
-    if use_new_fusion:
-        return _normalize_decoder_input_mode(checkpoint_decoder_residual or "none")
-
-    model_name = Path(model_path).stem.upper()
-    if "MIF" in model_name:
-        return "none"
-    if _is_medical_task(ir_path, vis_path, fusion_params):
-        return "sum"
-    return "visible"
-
-
-def _build_decoder_input(mode: str, vis_tensor: torch.Tensor, ir_tensor: torch.Tensor) -> Optional[torch.Tensor]:
-    mode = _normalize_decoder_input_mode(mode)
-    if mode == "visible":
-        return vis_tensor
-    if mode == "ir":
-        return ir_tensor
-    if mode == "sum":
-        return vis_tensor + ir_tensor
-    if mode == "none":
-        return None
-    raise ValueError(f"Unsupported decoder input mode: {mode}")
 def _save_gray_image(path: str, image_float01: np.ndarray) -> None:
     output_path = _resolve_project_path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -326,7 +161,7 @@ def get_random_image_pairs_from_folder(
 def run_fusion_prediction(
     ir_path: str,
     vis_path: str,
-    model_path: str = "models/CDDFuse_IVF.pth",
+    model_path: str = "models/GLoC-Mamba/GLoC-Mamba_latest.pth",
     output_path: Optional[str] = None,
     device: str = "cuda",
     debug: bool = False,
@@ -337,9 +172,7 @@ def run_fusion_prediction(
     save_output: bool = True,
     fusion_params: Optional[Mapping[str, Any]] = None,
 ) -> Any:
-    del use_test, eval_size
-
-    fusion_params = dict(fusion_params or {})
+    del use_test, eval_size, fusion_params
     resolved_device = _normalize_device(device)
     if debug and resolved_device != device:
         print(f"Requested device '{device}' is unavailable; falling back to '{resolved_device}'.")
@@ -356,32 +189,15 @@ def run_fusion_prediction(
     bundle = _load_model_bundle(model_path=model_path, device=resolved_device)
     ir_tensor = _to_tensor(ir_image, resolved_device)
     vis_tensor = _to_tensor(vis_image, resolved_device)
-    decoder_input_mode = _infer_decoder_input_mode(
-        model_path,
-        ir_path,
-        vis_path,
-        fusion_params,
-        checkpoint_decoder_residual=bundle.get("decoder_residual", "none"),
-        use_new_fusion=bool(bundle.get("use_new_fusion", False)),
-    )
-    decoder_input = _build_decoder_input(decoder_input_mode, vis_tensor, ir_tensor)
+    decoder_input_mode = 'none'
 
     with torch.no_grad():
-        feature_v_g, feature_v_l, _ = bundle["encoder"](vis_tensor)
-        feature_i_g, feature_i_l, _ = bundle["encoder"](ir_tensor)
-        if bundle.get("use_new_fusion", False):
-            feature_i_e, feature_v_e = bundle["modal_enhance"](
-                feature_i_g, feature_i_l, feature_v_g, feature_v_l)
-            feature_f_e = bundle["cross_mamba_fusion"](feature_i_e, feature_v_e)
-            fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
-        else:
-            feature_f_g = fuse_base_features(bundle["base_fuse"], feature_i_g, feature_v_g)
-            feature_f_l = fuse_detail_features(bundle["detail_fuse"], feature_i_l, feature_v_l)
-            if bundle["fmem"] is not None:
-                feature_f_e = bundle["fmem"](feature_f_l, feature_f_g)
-                fused_tensor, _ = bundle["decoder"](decoder_input, fused_feature=feature_f_e)
-            else:
-                fused_tensor, _ = bundle["decoder"](decoder_input, feature_f_g, feature_f_l)
+        feature_v_g, feature_v_l, _ = bundle['encoder'](vis_tensor)
+        feature_i_g, feature_i_l, _ = bundle['encoder'](ir_tensor)
+        feature_i_e, feature_v_e = bundle['modal_enhance'](
+            feature_i_g, feature_i_l, feature_v_g, feature_v_l)
+        feature_f_e = bundle['cross_mamba_fusion'](feature_i_e, feature_v_e)
+        fused_tensor, _ = bundle['decoder'](feature_f_e)
         fused_tensor = _normalize_fused_tensor(fused_tensor)
 
     fused_float01 = np.squeeze(fused_tensor.detach().cpu().numpy()).astype(np.float32, copy=False)

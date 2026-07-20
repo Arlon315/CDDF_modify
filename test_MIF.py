@@ -1,177 +1,75 @@
-from net import (
-    ENCODER_GLOBAL_LOCAL_SEMANTICS,
-    require_cddfuse_global_local_checkpoint,
-    build_cddfuse_modules,
-    fuse_base_features,
-    fuse_detail_features,
-    infer_cddfuse_base_fusion,
-    infer_cddfuse_gmem_share_mode,
-    infer_cddfuse_backbone,
-    infer_cddfuse_decoder_block,
-    infer_cddfuse_encoder_global_feature,
-    infer_cddfuse_encoder_local_feature,
-    infer_cddfuse_encoder_local_enhance_layers,
-    infer_cddfuse_detail_fusion,
-    infer_cddfuse_detail_num_layers,
-)
-from CMEM import CrossMambaEnhanceModule, infer_cmem_share_mamba, is_cmem_checkpoint
-from GLCM_Mamba import (
-    CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE,
-    GlobalLocalCrossModalMambaBlock,
-)
-from CMFB import (
-    CommenMambaFusionBlock,
-    get_decoder_residual_input,
-    infer_cross_mamba_share_mode,
-    is_cross_mamba_fusion_checkpoint,
-)
+import argparse
 import os
+from pathlib import Path
+
 import numpy as np
-from utils.Evaluator import Evaluator
 import torch
-import torch.nn as nn
-from utils.img_read_save import img_save,image_read_cv2
-import warnings
-import logging
-warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.CRITICAL)
-import cv2
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-CDDFuse_path=r"models/CDDFuse_IVF.pth"
-CDDFuse_MIF_path=r"models/CDDFuse_MIF.pth"
-for dataset_name in ["MRI_CT","MRI_PET","MRI_SPECT"]: 
-    print("\n"*2+"="*80)
-    print("The test result of "+dataset_name+" :")
-    print("\t\t EN\t SD\t SF\t MI\tSCD\tVIF\tQabf\tSSIM")
-    for ckpt_path in [CDDFuse_path,CDDFuse_MIF_path]: 
-        model_name=ckpt_path.split('/')[-1].split('.')[0]
-        test_folder=os.path.join('test_img',dataset_name) 
-        test_out_folder=os.path.join('test_result',dataset_name)
 
-        
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        checkpoint = torch.load(ckpt_path, map_location=device)
-        require_cddfuse_global_local_checkpoint(checkpoint)
-        use_new_fusion = is_cross_mamba_fusion_checkpoint(checkpoint)
-        if not use_new_fusion:
-            raise ValueError('Checkpoint does not use the current GLCM fusion structure.')
-        if (use_new_fusion and checkpoint.get('modal_enhance_structure')
-                != CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE):
-            raise ValueError(
-                'Checkpoint does not use the cross-modal global-local ModalEnhanceLayer.')
-        use_fmem = 'FMEMLayer' in checkpoint and not use_new_fusion
-        if use_fmem and not is_cmem_checkpoint(checkpoint):
-            raise ValueError("Checkpoint contains FMEMLayer, but it is not a CMEM checkpoint.")
-        encoder_module, decoder_module, base_fuse_module, detail_fuse_module = build_cddfuse_modules(
-            infer_cddfuse_backbone(checkpoint),
-            detail_fusion=infer_cddfuse_detail_fusion(checkpoint),
-            detail_fusion_num_layers=infer_cddfuse_detail_num_layers(checkpoint),
-            encoder_local_enhance_layers=infer_cddfuse_encoder_local_enhance_layers(checkpoint),
-            encoder_global_feature=infer_cddfuse_encoder_global_feature(checkpoint),
-            encoder_local_feature=infer_cddfuse_encoder_local_feature(checkpoint),
-            base_fusion=infer_cddfuse_base_fusion(checkpoint),
-            gmem_share_mode=infer_cddfuse_gmem_share_mode(checkpoint),
-            decoder_block=infer_cddfuse_decoder_block(checkpoint),
-        )
-        Encoder = nn.DataParallel(encoder_module).to(device)
-        Decoder = nn.DataParallel(decoder_module).to(device)
-        BaseFuseLayer = None
-        DetailFuseLayer = None
-        ModalEnhanceLayer = None
-        CrossMambaFusionLayer = None
-        FMEMLayer = None
-        if use_new_fusion:
-            ModalEnhanceLayer = nn.DataParallel(
-                GlobalLocalCrossModalMambaBlock(dim=64)
-            ).to(device)
-            CrossMambaFusionLayer = nn.DataParallel(
-                CommenMambaFusionBlock(
-                    dim=64,
-                    share_mode=infer_cross_mamba_share_mode(checkpoint),
-                )
-            ).to(device)
-        else:
-            BaseFuseLayer = nn.DataParallel(base_fuse_module).to(device)
-            DetailFuseLayer = nn.DataParallel(detail_fuse_module).to(device)
-            if use_fmem:
-                FMEMLayer = nn.DataParallel(
-                    CrossMambaEnhanceModule(
-                        dim=64,
-                        share_mamba=infer_cmem_share_mamba(checkpoint),
-                    )
-                ).to(device)
+from network.model_loader import build_current_glcm_model
+from utils.Evaluator import Evaluator
+from utils.img_read_save import image_read_cv2, img_save
 
-        Encoder.load_state_dict(checkpoint['DIDF_Encoder'])
-        Decoder.load_state_dict(checkpoint['DIDF_Decoder'], strict=False)
-        if use_new_fusion:
-            ModalEnhanceLayer.load_state_dict(checkpoint['ModalEnhanceLayer'])
-            CrossMambaFusionLayer.load_state_dict(checkpoint['CrossMambaFusionLayer'], strict=False)
-        else:
-            BaseFuseLayer.load_state_dict(checkpoint['BaseFuseLayer'])
-            DetailFuseLayer.load_state_dict(checkpoint['DetailFuseLayer'])
-            if use_fmem:
-                FMEMLayer.load_state_dict(checkpoint['FMEMLayer'])
-        Encoder.eval()
-        Decoder.eval()
-        if use_new_fusion:
-            ModalEnhanceLayer.eval()
-            CrossMambaFusionLayer.eval()
-        else:
-            BaseFuseLayer.eval()
-            DetailFuseLayer.eval()
-            if use_fmem:
-                FMEMLayer.eval()
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Evaluate the current GLoC-Mamba checkpoint on medical fusion datasets.')
+    parser.add_argument('--ckpt-path', required=True, help='Path to a compatible GLoC-Mamba checkpoint.')
+    parser.add_argument('--datasets', nargs='+', default=['MRI_CT', 'MRI_PET', 'MRI_SPECT'])
+    parser.add_argument('--limit', type=int, default=None, help='Evaluate only the first N image pairs per dataset.')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    checkpoint = torch.load(args.ckpt_path, map_location=device)
+    model = build_current_glcm_model(checkpoint, device, data_parallel=True)
+    encoder = model['encoder']
+    decoder = model['decoder']
+    modal_enhance = model['modal_enhance']
+    cross_mamba_fusion = model['cross_mamba_fusion']
+
+    for dataset_name in args.datasets:
+        visible_modality, infrared_modality = dataset_name.split('_', maxsplit=1)
+        test_folder = os.path.join('test_img', dataset_name)
+        visible_folder = os.path.join(test_folder, visible_modality)
+        infrared_folder = os.path.join(test_folder, infrared_modality)
+        output_folder = os.path.join('test_result', dataset_name)
+        image_names = sorted(os.listdir(visible_folder))
+        if args.limit is not None:
+            image_names = image_names[:args.limit]
+        if not image_names:
+            raise ValueError(f'No images found for {dataset_name}.')
+
         with torch.no_grad():
-            for img_name in os.listdir(os.path.join(test_folder,dataset_name.split('_')[0])):
-                data_IR=image_read_cv2(os.path.join(test_folder,dataset_name.split('_')[1],img_name),mode='GRAY')[np.newaxis,np.newaxis, ...]/255.0
-                data_VIS = image_read_cv2(os.path.join(test_folder,dataset_name.split('_')[0],img_name), mode='GRAY')[np.newaxis,np.newaxis, ...]/255.0
+            for image_name in image_names:
+                data_ir = image_read_cv2(os.path.join(infrared_folder, image_name), mode='GRAY')[np.newaxis, np.newaxis, ...] / 255.0
+                data_vis = image_read_cv2(os.path.join(visible_folder, image_name), mode='GRAY')[np.newaxis, np.newaxis, ...] / 255.0
+                data_ir = torch.FloatTensor(data_ir).to(device)
+                data_vis = torch.FloatTensor(data_vis).to(device)
 
-                data_IR,data_VIS = torch.FloatTensor(data_IR),torch.FloatTensor(data_VIS)
-                data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
+                feature_v_g, feature_v_l, _ = encoder(data_vis)
+                feature_i_g, feature_i_l, _ = encoder(data_ir)
+                feature_i_e, feature_v_e = modal_enhance(
+                    feature_i_g, feature_i_l, feature_v_g, feature_v_l)
+                feature_f_e = cross_mamba_fusion(feature_i_e, feature_v_e)
+                fused, _ = decoder(feature_f_e)
+                fused = (fused - fused.min()) / (fused.max() - fused.min())
+                img_save(np.uint8(np.round(np.squeeze((fused * 255).cpu().numpy()))), Path(image_name).stem, output_folder)
 
-                feature_V_G, feature_V_L, feature_V = Encoder(data_VIS)
-                feature_I_G, feature_I_L, feature_I = Encoder(data_IR)
-                if use_new_fusion:
-                    feature_I_E, feature_V_E = ModalEnhanceLayer(
-                        feature_I_G, feature_I_L, feature_V_G, feature_V_L)
-                    feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
-                    decoder_input = get_decoder_residual_input(
-                        checkpoint.get('decoder_residual', 'none'), data_IR, data_VIS)
-                    data_Fuse, _ = Decoder(decoder_input, fused_feature=feature_F_E)
-                else:
-                    feature_F_G = fuse_base_features(BaseFuseLayer, feature_I_G, feature_V_G)
-                    feature_F_L = fuse_detail_features(DetailFuseLayer, feature_I_L, feature_V_L)
-                    decoder_input = data_IR + data_VIS if ckpt_path == CDDFuse_path else None
-                    if use_fmem:
-                        feature_F_E = FMEMLayer(feature_F_L, feature_F_G)
-                        data_Fuse, _ = Decoder(decoder_input, fused_feature=feature_F_E)
-                    else:
-                        data_Fuse, _ = Decoder(decoder_input, feature_F_G, feature_F_L)
-                data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
-                fi = np.squeeze((data_Fuse * 255).cpu().numpy())
-                img_save(fi, img_name.split(sep='.')[0], test_out_folder)
-        eval_folder=test_out_folder  
-        ori_img_folder=test_folder
+        metric_result = np.zeros(8)
+        for image_name in image_names:
+            ir = image_read_cv2(os.path.join(infrared_folder, image_name), 'GRAY')
+            vis = image_read_cv2(os.path.join(visible_folder, image_name), 'GRAY')
+            fused = image_read_cv2(os.path.join(output_folder, Path(image_name).stem + '.png'), 'GRAY')
+            metric_result += np.array([
+                Evaluator.EN(fused), Evaluator.SD(fused), Evaluator.SF(fused),
+                Evaluator.MI(fused, ir, vis), Evaluator.SCD(fused, ir, vis),
+                Evaluator.VIFF(fused, ir, vis), Evaluator.Qabf(fused, ir, vis),
+                Evaluator.SSIM(fused, ir, vis),
+            ])
+        metric_result /= len(image_names)
+        print(dataset_name + '\t' + '\t'.join(str(np.round(value, 2)) for value in metric_result))
 
-        metric_result = np.zeros((8))
-        for img_name in os.listdir(os.path.join(ori_img_folder,dataset_name.split('_')[0])):
-                ir = image_read_cv2(os.path.join(ori_img_folder,dataset_name.split('_')[1], img_name), 'GRAY')
-                vi = image_read_cv2(os.path.join(ori_img_folder,dataset_name.split('_')[0], img_name), 'GRAY')
-                fi = image_read_cv2(os.path.join(eval_folder, img_name.split('.')[0]+".png"), 'GRAY')
-                metric_result += np.array([Evaluator.EN(fi), Evaluator.SD(fi)
-                                            , Evaluator.SF(fi), Evaluator.MI(fi, ir, vi)
-                                            , Evaluator.SCD(fi, ir, vi), Evaluator.VIFF(fi, ir, vi)
-                                            , Evaluator.Qabf(fi, ir, vi), Evaluator.SSIM(fi, ir, vi)])
 
-        metric_result /= len(os.listdir(eval_folder))
-        
-        print(model_name+'\t'+str(np.round(metric_result[0], 2))+'\t'
-                +str(np.round(metric_result[1], 2))+'\t'
-                +str(np.round(metric_result[2], 2))+'\t'
-                +str(np.round(metric_result[3], 2))+'\t'
-                +str(np.round(metric_result[4], 2))+'\t'
-                +str(np.round(metric_result[5], 2))+'\t'
-                +str(np.round(metric_result[6], 2))+'\t'
-                +str(np.round(metric_result[7], 2))
-                )
-    print("="*80)
+if __name__ == '__main__':
+    main()

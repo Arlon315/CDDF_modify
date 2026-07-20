@@ -5,10 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
-from SpatialMamba import LayerNorm
-
-
-CROSS_MODAL_GLOBAL_LOCAL_STRUCTURE = 'cross_modal_global_local'
+from .SpatialMamba import LayerNorm
 
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
@@ -209,10 +206,8 @@ class SSMOnly4Path(nn.Module):
 
 
 class GlobalLocalCrossModalMambaBlock(nn.Module):
-    def __init__(self, dim=64, out_dim=None):
+    def __init__(self, dim=64):
         super(GlobalLocalCrossModalMambaBlock, self).__init__()
-        out_dim = dim if out_dim is None else int(out_dim)
-
         self.ir_global_norm = LayerNorm(dim, 'WithBias')
         self.vi_global_norm = LayerNorm(dim, 'WithBias')
         self.ir_local_norm = LayerNorm(dim, 'WithBias')
@@ -229,9 +224,9 @@ class GlobalLocalCrossModalMambaBlock(nn.Module):
         self.vi_local_gate = self._make_gate(dim)
 
         self.ir_fusion_proj = nn.Conv2d(
-            dim * 2, out_dim, kernel_size=1, bias=True)
+            dim * 2, dim, kernel_size=1, bias=True)
         self.vi_fusion_proj = nn.Conv2d(
-            dim * 2, out_dim, kernel_size=1, bias=True)
+            dim * 2, dim, kernel_size=1, bias=True)
 
     def _make_gate(self, dim):
         gate = nn.Sequential(
