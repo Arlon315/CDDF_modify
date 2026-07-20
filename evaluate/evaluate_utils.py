@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from net import (  # noqa: E402
+    require_cddfuse_global_local_checkpoint,
     build_cddfuse_modules,
     fuse_base_features,
     fuse_detail_features,
