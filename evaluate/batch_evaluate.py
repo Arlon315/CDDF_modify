@@ -249,7 +249,7 @@ def get_project_defaults() -> Mapping[str, object]:
             },
         },
         "default_dataset": "MSRS-main",
-        "default_model_path": "models/newStructure/_spatial_mamba_INN_AKDEConv_htb_lowhigh_crossmamba_privateakc_independent_latest.pth",
+        "default_model_path": "models/final/_spatial_mamba_AKDEConv_CGA_htb_global_local_crossmamba_privateakc_independent_skipP1_07-18-06-07_epoch_040.pth",
         "default_runner": DEFAULT_RUNNER_SPEC,
         "default_device": "cuda",
         "default_debug": False,
