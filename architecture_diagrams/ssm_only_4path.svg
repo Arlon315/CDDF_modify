@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3200" height="1980" viewBox="0 0 3200 1980">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#4a5b6b"/></marker>
+    <marker id="blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#2c7db8"/></marker>
+    <marker id="red" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#c85d70"/></marker>
+    <style>
+      .title{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:46px;font-weight:700;fill:#1f2d3b}
+      .sub{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:23px;fill:#52687c}
+      .bar{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:28px;font-weight:700;fill:#fff}
+      .head{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:24px;font-weight:700;fill:#23415a}
+      .label{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:21px;font-weight:700;fill:#273b4c}
+      .body{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:18px;fill:#3c546a}
+      .small{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:16px;fill:#52687c}
+      .code{font-family:Consolas,'Courier New',monospace;font-size:17px;fill:#28485f}
+      .box{stroke-width:2.2;rx:14;ry:14}
+      .flow{fill:none;stroke:#4a5b6b;stroke-width:3;marker-end:url(#arrow)}
+      .bf{fill:none;stroke:#2c7db8;stroke-width:3;marker-end:url(#blue)}
+      .rf{fill:none;stroke:#c85d70;stroke-width:3;marker-end:url(#red)}
+      .dash{fill:none;stroke:#718393;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="3200" height="1980" fill="#f7f9fc"/>
+  <text x="1600" y="70" text-anchor="middle" class="title">SSMOnly4Path 详细结构图</text>
+  <text x="1600" y="108" text-anchor="middle" class="sub">GLCM 的四方向纯 Selective State Space 模块 · 输入/输出保持 B×64×H×W</text>
+
+  <!-- legend -->
+  <rect x="2360" y="135" width="750" height="75" rx="12" fill="#fff" stroke="#cbd8e4"/>
+  <rect x="2390" y="155" width="18" height="18" fill="#e4f1fb" stroke="#2c7db8"/><text x="2421" y="171" class="small">特征与方向流</text>
+  <rect x="2580" y="155" width="18" height="18" fill="#fde5e9" stroke="#c85d70"/><text x="2611" y="171" class="small">状态空间参数</text>
+  <path d="M2780 164 H2830" class="dash"/><text x="2850" y="171" class="small">翻转/复原操作</text>
+
+  <!-- input and preface -->
+  <rect x="90" y="235" width="3020" height="790" rx="22" fill="#fff" stroke="#7ba4c2" stroke-width="3"/>
+  <rect x="90" y="235" width="3020" height="57" rx="20" fill="#3c789f"/>
+  <text x="1600" y="275" text-anchor="middle" class="bar">阶段 1：二维特征图 → 四条全局序列 → 四个独立 SSMOnlySeqBlock</text>
+  <rect x="1300" y="330" width="600" height="88" class="box" fill="#dceefa" stroke="#5f9fcd"/>
+  <text x="1600" y="365" text-anchor="middle" class="label">输入特征 X</text>
+  <text x="1600" y="396" text-anchor="middle" class="code">X ∈ R^(B×64×H×W)</text>
+  <path d="M1600 418 V455" class="bf"/>
+  <text x="1600" y="481" text-anchor="middle" class="body">四条路径均覆盖整幅图；每条序列长度均为 L=H·W，只是像素排列顺序不同。</text>
+
+  <!-- Four paths -->
+  <rect x="140" y="530" width="680" height="425" class="box" fill="#f1f8fd" stroke="#6aa6d0"/>
+  <text x="480" y="568" text-anchor="middle" class="head">路径 0：水平正向 h→</text>
+  <text x="480" y="605" text-anchor="middle" class="code">X.permute(B,H,W,C)</text>
+  <text x="480" y="634" text-anchor="middle" class="code">→ reshape(B,H·W,64)</text>
+  <rect x="235" y="675" width="490" height="140" class="box" fill="#e4f1fb" stroke="#6aa6d0"/>
+  <text x="480" y="710" text-anchor="middle" class="label">SSMOnlySeqBlock₀</text>
+  <text x="480" y="742" text-anchor="middle" class="body">行优先 raster scan 的正向上下文</text>
+  <text x="480" y="775" text-anchor="middle" class="code">(B,L,64) → (B,L,64)</text>
+  <text x="480" y="874" text-anchor="middle" class="small">注意：不是每一行独立扫描，而是一条跨越全图的行优先序列。</text>
+
+  <rect x="890" y="530" width="680" height="425" class="box" fill="#f1f8fd" stroke="#6aa6d0"/>
+  <text x="1230" y="568" text-anchor="middle" class="head">路径 1：水平反向 h←</text>
+  <text x="1230" y="605" text-anchor="middle" class="code">h_rev = flip(h_fwd, seq dim)</text>
+  <text x="1230" y="634" text-anchor="middle" class="code">shape: (B,H·W,64)</text>
+  <rect x="985" y="675" width="490" height="140" class="box" fill="#e4f1fb" stroke="#6aa6d0"/>
+  <text x="1230" y="710" text-anchor="middle" class="label">SSMOnlySeqBlock₁</text>
+  <text x="1230" y="742" text-anchor="middle" class="body">反向序列的因果上下文</text>
+  <text x="1230" y="775" text-anchor="middle" class="code">out → flip 回 h→ 坐标</text>
+  <text x="1230" y="874" text-anchor="middle" class="small">与路径 0 参数独立，补全相反方向的长程依赖。</text>
+
+  <rect x="1640" y="530" width="680" height="425" class="box" fill="#f1f8fd" stroke="#6aa6d0"/>
+  <text x="1980" y="568" text-anchor="middle" class="head">路径 2：垂直正向 v↓</text>
+  <text x="1980" y="605" text-anchor="middle" class="code">X.permute(B,W,H,C)</text>
+  <text x="1980" y="634" text-anchor="middle" class="code">→ reshape(B,W·H,64)</text>
+  <rect x="1735" y="675" width="490" height="140" class="box" fill="#e4f1fb" stroke="#6aa6d0"/>
+  <text x="1980" y="710" text-anchor="middle" class="label">SSMOnlySeqBlock₂</text>
+  <text x="1980" y="742" text-anchor="middle" class="body">列优先 raster scan 的正向上下文</text>
+  <text x="1980" y="775" text-anchor="middle" class="code">(B,L,64) → (B,L,64)</text>
+  <text x="1980" y="874" text-anchor="middle" class="small">相邻关系从行优先改为列优先，强化纵向依赖。</text>
+
+  <rect x="2390" y="530" width="680" height="425" class="box" fill="#f1f8fd" stroke="#6aa6d0"/>
+  <text x="2730" y="568" text-anchor="middle" class="head">路径 3：垂直反向 v↑</text>
+  <text x="2730" y="605" text-anchor="middle" class="code">v_rev = flip(v_fwd, seq dim)</text>
+  <text x="2730" y="634" text-anchor="middle" class="code">shape: (B,W·H,64)</text>
+  <rect x="2485" y="675" width="490" height="140" class="box" fill="#e4f1fb" stroke="#6aa6d0"/>
+  <text x="2730" y="710" text-anchor="middle" class="label">SSMOnlySeqBlock₃</text>
+  <text x="2730" y="742" text-anchor="middle" class="body">反向列优先的因果上下文</text>
+  <text x="2730" y="775" text-anchor="middle" class="code">out → flip 回 v↓ 坐标</text>
+  <text x="2730" y="874" text-anchor="middle" class="small">与路径 2 参数独立，补全向上的长程依赖。</text>
+
+  <!-- flow from input to paths -->
+  <path d="M1600 455 V505 H480 V520" class="bf"/><path d="M1600 455 V505 H1230 V520" class="bf"/>
+  <path d="M1600 455 V505 H1980 V520" class="bf"/><path d="M1600 455 V505 H2730 V520" class="bf"/>
+
+  <!-- reassembly & output -->
+  <rect x="90" y="1070" width="3020" height="320" rx="22" fill="#fff" stroke="#7ba4c2" stroke-width="3"/>
+  <rect x="90" y="1070" width="3020" height="57" rx="20" fill="#3c789f"/>
+  <text x="1600" y="1110" text-anchor="middle" class="bar">阶段 2：反向复原、二维重组与四方向聚合</text>
+  <rect x="190" y="1160" width="575" height="135" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="478" y="1194" text-anchor="middle" class="label">水平输出重组</text>
+  <text x="478" y="1227" text-anchor="middle" class="code">reshape(B,H,W,64)</text>
+  <text x="478" y="1255" text-anchor="middle" class="code">→ permute(B,64,H,W)</text>
+  <rect x="865" y="1160" width="575" height="135" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="1153" y="1194" text-anchor="middle" class="label">反向路径先复位</text>
+  <text x="1153" y="1227" text-anchor="middle" class="code">flip(h_rev), flip(v_rev)</text>
+  <text x="1153" y="1255" text-anchor="middle" class="small">恢复到原始空间位置对应关系</text>
+  <rect x="1540" y="1160" width="575" height="135" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="1828" y="1194" text-anchor="middle" class="label">垂直输出重组</text>
+  <text x="1828" y="1227" text-anchor="middle" class="code">reshape(B,W,H,64)</text>
+  <text x="1828" y="1255" text-anchor="middle" class="code">→ permute(B,64,H,W)</text>
+  <rect x="2215" y="1160" width="795" height="135" class="box" fill="#dceefa" stroke="#5f9fcd"/>
+  <text x="2612" y="1194" text-anchor="middle" class="label">四路聚合与通道投影</text>
+  <text x="2612" y="1227" text-anchor="middle" class="code">S = Y_h→ + Y_h← + Y_v↓ + Y_v↑</text>
+  <text x="2612" y="1255" text-anchor="middle" class="code">Y = Conv1×1(S) : 64 → 64</text>
+  <path d="M478 1295 V1340 H2360" class="bf"/><path d="M1153 1295 V1320 H2420" class="bf"/><path d="M1828 1295 V1320 H2480" class="bf"/>
+  <path d="M2612 1295 V1330" class="bf"/>
+  <rect x="1330" y="1410" width="540" height="82" class="box" fill="#cbe6d3" stroke="#638d70"/>
+  <text x="1600" y="1443" text-anchor="middle" class="label">SSMOnly4Path 输出 Y</text>
+  <text x="1600" y="1472" text-anchor="middle" class="code">B×64×H×W</text>
+
+  <!-- Inner SSM only -->
+  <rect x="90" y="1545" width="3020" height="360" rx="22" fill="#fff" stroke="#bd8190" stroke-width="3"/>
+  <rect x="90" y="1545" width="3020" height="57" rx="20" fill="#a74d63"/>
+  <text x="1600" y="1585" text-anchor="middle" class="bar">SSMOnlySeqBlock 内部（四条路径均为此结构，但各自参数独立）</text>
+  <rect x="150" y="1642" width="420" height="190" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="360" y="1678" text-anchor="middle" class="head">特征展开</text>
+  <text x="360" y="1711" text-anchor="middle" class="code">seq (B,L,64)</text>
+  <text x="360" y="1743" text-anchor="middle" class="code">Linear: 64→128</text>
+  <text x="360" y="1774" text-anchor="middle" class="code">transpose → (B,128,L)</text>
+  <path d="M570 1735 H640" class="bf"/>
+  <rect x="640" y="1642" width="420" height="190" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="850" y="1678" text-anchor="middle" class="head">短程局部建模</text>
+  <text x="850" y="1711" text-anchor="middle" class="code">DWConv1d: k=4</text>
+  <text x="850" y="1743" text-anchor="middle" class="code">groups=128, causal</text>
+  <text x="850" y="1774" text-anchor="middle" class="code">SiLU</text>
+  <path d="M1060 1735 H1130" class="bf"/>
+  <rect x="1130" y="1642" width="560" height="190" class="box" fill="#fff0f2" stroke="#c85d70"/>
+  <text x="1410" y="1678" text-anchor="middle" class="head">选择性参数生成</text>
+  <text x="1410" y="1711" text-anchor="middle" class="code">x_proj: 128→36</text>
+  <text x="1410" y="1743" text-anchor="middle" class="code">split: dt_rank=4, B=16, C=16</text>
+  <text x="1410" y="1774" text-anchor="middle" class="code">dt_proj: 4→128; Δ=softplus(dt+bias)</text>
+  <path d="M1690 1735 H1760" class="rf"/>
+  <rect x="1760" y="1642" width="720" height="190" class="box" fill="#fff0f2" stroke="#c85d70"/>
+  <text x="2120" y="1678" text-anchor="middle" class="head">Selective State Space Scan</text>
+  <text x="2120" y="1711" text-anchor="middle" class="code">A = -exp(A_log), D = D_skip</text>
+  <text x="2120" y="1743" text-anchor="middle" class="code">Scan(x, Δ, A, B, C, D, z=None)</text>
+  <text x="2120" y="1774" text-anchor="middle" class="small">没有 SiLU(z) 输出门控；该类名为 SSMOnly 的原因</text>
+  <path d="M2480 1735 H2550" class="bf"/>
+  <rect x="2550" y="1642" width="500" height="190" class="box" fill="#eef6fb" stroke="#6aa6d0"/>
+  <text x="2800" y="1678" text-anchor="middle" class="head">输出恢复</text>
+  <text x="2800" y="1711" text-anchor="middle" class="code">transpose → (B,L,128)</text>
+  <text x="2800" y="1743" text-anchor="middle" class="code">LayerNorm(128)</text>
+  <text x="2800" y="1774" text-anchor="middle" class="code">Linear: 128→64</text>
+  <text x="1600" y="1884" text-anchor="middle" class="body">训练时若输入需要梯度，四个方向会分别启用 activation checkpoint，以计算换取显存；推理时直接执行。</text>
+</svg>

@@ -4,8 +4,11 @@ import torch.nn.functional as F
 
 try:
     from mamba_ssm import Mamba
-except ImportError:
+except ImportError as exc:
     Mamba = None
+    MAMBA_IMPORT_ERROR = exc
+else:
+    MAMBA_IMPORT_ERROR = None
 
 
 class LayerNorm(nn.Module):
@@ -49,7 +52,8 @@ class SpatialMamba4Path(nn.Module):
         if Mamba is None:
             raise ImportError(
                 "SpatialMamba4Path requires mamba_ssm. Install mamba-ssm "
-                "in the training environment before using this block."
+                "in the training environment before using this block. "
+                f"Original import error: {MAMBA_IMPORT_ERROR!r}"
             )
 
         self.mambas = nn.ModuleList([

@@ -7,8 +7,11 @@ from torch.utils.checkpoint import checkpoint as checkpoint_fn
 
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
-except ImportError:
+except ImportError as exc:
     selective_scan_fn = None
+    MAMBA_IMPORT_ERROR = exc
+else:
+    MAMBA_IMPORT_ERROR = None
 
 try:
     from causal_conv1d import causal_conv1d_fn
@@ -36,7 +39,8 @@ class CommonZMambaSeqBlock(nn.Module):
         if selective_scan_fn is None:
             raise ImportError(
                 "CommonZMambaSeqBlock requires mamba_ssm. Install mamba-ssm "
-                "in the training environment before using GMEM."
+                "in the training environment before using GMEM. "
+                f"Original import error: {MAMBA_IMPORT_ERROR!r}"
             )
 
         self.dim = dim

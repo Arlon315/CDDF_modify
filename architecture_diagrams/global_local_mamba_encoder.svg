@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1700" viewBox="0 0 2600 1700">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#44546a"/></marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#377dbe"/></marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#d87928"/></marker>
+    <style>
+      .title { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:44px; font-weight:700; fill:#1f2d3d; }
+      .subtitle { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:23px; fill:#5b6877; }
+      .panelTitle { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:28px; font-weight:700; fill:#fff; }
+      .section { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:24px; font-weight:700; fill:#244b6c; }
+      .label { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:22px; font-weight:700; fill:#233445; }
+      .body { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:19px; fill:#33495f; }
+      .small { font-family:'Microsoft YaHei',Arial,sans-serif; font-size:16px; fill:#465b70; }
+      .code { font-family:Consolas,'Courier New',monospace; font-size:17px; fill:#29445e; }
+      .box { stroke-width:2.2; rx:16; ry:16; }
+      .flow { fill:none; stroke:#44546a; stroke-width:3; marker-end:url(#arrow); }
+      .flowBlue { fill:none; stroke:#377dbe; stroke-width:3; marker-end:url(#arrowBlue); }
+      .flowOrange { fill:none; stroke:#d87928; stroke-width:3; marker-end:url(#arrowOrange); }
+      .residual { fill:none; stroke:#798897; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="2600" height="1700" fill="#f7f9fc"/>
+  <text x="1300" y="70" text-anchor="middle" class="title">当前 GLoC-Mamba 全局—局部编码器结构图</text>
+  <text x="1300" y="108" text-anchor="middle" class="subtitle">实现依据：network/net.py · Restormer_Encoder（dim=64，空间分辨率 H×W 保持不变）</text>
+
+  <!-- legend -->
+  <rect x="1950" y="134" width="535" height="87" rx="12" fill="#fff" stroke="#ced9e5"/>
+  <rect x="1972" y="153" width="18" height="18" fill="#dceefa" stroke="#377dbe"/>
+  <text x="2003" y="169" class="small">全局上下文 / Mamba</text>
+  <rect x="2187" y="153" width="18" height="18" fill="#fff0df" stroke="#d87928"/>
+  <text x="2218" y="169" class="small">局部细节 / 卷积注意力</text>
+  <path d="M1973 199 H2025" class="residual"/>
+  <text x="2041" y="205" class="small">虚线：残差路径</text>
+  <text x="2228" y="205" class="small">⊕：逐元素相加</text>
+
+  <!-- common stem -->
+  <rect x="100" y="174" width="220" height="104" class="box" fill="#eef2f7" stroke="#718096"/>
+  <text x="210" y="216" text-anchor="middle" class="label">单模态输入</text>
+  <text x="210" y="247" text-anchor="middle" class="code">I ∈ R^(B×1×H×W)</text>
+  <path d="M320 226 H405" class="flow"/>
+
+  <rect x="405" y="160" width="300" height="135" class="box" fill="#ebf3fb" stroke="#5b91c7"/>
+  <text x="555" y="204" text-anchor="middle" class="label">OverlapPatchEmbed</text>
+  <text x="555" y="234" text-anchor="middle" class="body">3×3 Conv，stride=1，padding=1</text>
+  <text x="555" y="263" text-anchor="middle" class="code">1 → 64 channels</text>
+  <path d="M705 226 H788" class="flow"/>
+
+  <rect x="788" y="134" width="518" height="190" class="box" fill="#eef5fb" stroke="#4b87b9"/>
+  <text x="1047" y="177" text-anchor="middle" class="section">共享浅层特征提取：Restormer TransformerBlock × 4</text>
+  <rect x="817" y="197" width="210" height="90" rx="10" fill="#fff" stroke="#91b3d2"/>
+  <text x="922" y="229" text-anchor="middle" class="label">MDTA 残差子层</text>
+  <text x="922" y="257" text-anchor="middle" class="small">LN → 1×1 QKV → 3×3 DWConv</text>
+  <text x="922" y="278" text-anchor="middle" class="small">8-head transposed attention</text>
+  <path d="M1027 242 H1060" class="flow"/>
+  <rect x="1060" y="197" width="216" height="90" rx="10" fill="#fff" stroke="#91b3d2"/>
+  <text x="1168" y="229" text-anchor="middle" class="label">GDFN 残差子层</text>
+  <text x="1168" y="257" text-anchor="middle" class="small">LN → 1×1 expand (64→256)</text>
+  <text x="1168" y="278" text-anchor="middle" class="small">3×3 DWConv → GELU gate → 1×1</text>
+  <text x="1047" y="314" text-anchor="middle" class="code">F₀ ∈ R^(B×64×H×W)</text>
+
+  <path d="M1047 324 V370 H640 V417" class="flowBlue"/>
+  <path d="M1047 324 V370 H1940 V417" class="flowOrange"/>
+  <text x="842" y="356" text-anchor="middle" class="small">共享特征 F₀ 分流</text>
+
+  <!-- global panel -->
+  <rect x="70" y="405" width="1140" height="1190" rx="22" fill="#f1f8fd" stroke="#5c9dd0" stroke-width="3"/>
+  <rect x="70" y="405" width="1140" height="58" rx="20" fill="#377dbe"/>
+  <text x="640" y="444" text-anchor="middle" class="panelTitle">全局编码分支  GlobalFeature = SpatialMambaGlobalFeature(num_layers=1)</text>
+  <rect x="120" y="486" width="1040" height="68" rx="12" fill="#fff" stroke="#a8c9e1"/>
+  <text x="640" y="528" text-anchor="middle" class="label">输入 F₀ (B×64×H×W) → SpatialMambaBaseLayer</text>
+  <path d="M640 554 V600" class="flowBlue"/>
+
+  <rect x="120" y="600" width="1040" height="119" class="box" fill="#dceefa" stroke="#5c9dd0"/>
+  <text x="640" y="638" text-anchor="middle" class="label">① Pre-Norm + SpatialMamba4Path（全局空间依赖）</text>
+  <text x="640" y="669" text-anchor="middle" class="body">WithBias LayerNorm（逐像素、沿通道 C=64 归一化） → 四方向 Selective State Space Model</text>
+  <text x="640" y="697" text-anchor="middle" class="code">S = SpatialMamba4Path( LN(F₀) )</text>
+  <path d="M640 719 V750" class="flowBlue"/>
+
+  <!-- four scan paths -->
+  <rect x="120" y="750" width="1040" height="280" rx="16" fill="#fff" stroke="#8bb6d8" stroke-width="2"/>
+  <text x="640" y="784" text-anchor="middle" class="section">SpatialMamba4Path：将二维特征展平为四条独立序列</text>
+  <rect x="150" y="815" width="225" height="150" class="box" fill="#e8f4fc" stroke="#6ca7d2"/>
+  <text x="262" y="850" text-anchor="middle" class="label">水平正向 h→</text>
+  <text x="262" y="881" text-anchor="middle" class="code">permute(B,H,W,C)</text>
+  <text x="262" y="906" text-anchor="middle" class="code">reshape(B,H·W,64)</text>
+  <text x="262" y="938" text-anchor="middle" class="body">Mamba₀(d_model=64)</text>
+  <rect x="405" y="815" width="225" height="150" class="box" fill="#e8f4fc" stroke="#6ca7d2"/>
+  <text x="517" y="850" text-anchor="middle" class="label">水平反向 h←</text>
+  <text x="517" y="881" text-anchor="middle" class="code">flip(h→, seq dim)</text>
+  <text x="517" y="906" text-anchor="middle" class="code">reshape(B,H·W,64)</text>
+  <text x="517" y="938" text-anchor="middle" class="body">Mamba₁ → flip 回原方向</text>
+  <rect x="660" y="815" width="225" height="150" class="box" fill="#e8f4fc" stroke="#6ca7d2"/>
+  <text x="772" y="850" text-anchor="middle" class="label">垂直正向 v↓</text>
+  <text x="772" y="881" text-anchor="middle" class="code">permute(B,W,H,C)</text>
+  <text x="772" y="906" text-anchor="middle" class="code">reshape(B,W·H,64)</text>
+  <text x="772" y="938" text-anchor="middle" class="body">Mamba₂(d_model=64)</text>
+  <rect x="915" y="815" width="215" height="150" class="box" fill="#e8f4fc" stroke="#6ca7d2"/>
+  <text x="1022" y="850" text-anchor="middle" class="label">垂直反向 v↑</text>
+  <text x="1022" y="881" text-anchor="middle" class="code">flip(v↓, seq dim)</text>
+  <text x="1022" y="906" text-anchor="middle" class="code">reshape(B,W·H,64)</text>
+  <text x="1022" y="938" text-anchor="middle" class="body">Mamba₃ → flip 回原方向</text>
+  <text x="640" y="1008" text-anchor="middle" class="body">四路输出复原为 (B,64,H,W)，逐元素求和，然后经 1×1 Conv 投影（64→64）</text>
+  <path d="M640 1030 V1060" class="flowBlue"/>
+
+  <circle cx="640" cy="1090" r="28" fill="#fff" stroke="#377dbe" stroke-width="3"/>
+  <text x="640" y="1099" text-anchor="middle" class="label">⊕</text>
+  <path d="M640 1060 V1063" class="flowBlue"/>
+  <path d="M170 600 V1090 H605" class="residual"/>
+  <text x="155" y="866" text-anchor="middle" transform="rotate(-90 155 866)" class="small">残差：F₀</text>
+  <path d="M640 1118 V1150" class="flowBlue"/>
+
+  <rect x="260" y="1150" width="760" height="112" class="box" fill="#dceefa" stroke="#5c9dd0"/>
+  <text x="640" y="1188" text-anchor="middle" class="label">② Pre-Norm + MLP（ffn_expansion_factor=1.0）</text>
+  <text x="640" y="1218" text-anchor="middle" class="body">LN → 1×1 Conv (64→128) → 3×3 grouped DWConv → split(64,64)</text>
+  <text x="640" y="1245" text-anchor="middle" class="code">GELU(x₁) ⊙ x₂ → 1×1 Conv (64→64)</text>
+  <path d="M640 1262 V1295" class="flowBlue"/>
+  <circle cx="640" cy="1325" r="28" fill="#fff" stroke="#377dbe" stroke-width="3"/>
+  <text x="640" y="1334" text-anchor="middle" class="label">⊕</text>
+  <path d="M330 1150 V1325 H605" class="residual"/>
+  <text x="315" y="1240" text-anchor="middle" transform="rotate(-90 315 1240)" class="small">残差：①输出</text>
+  <path d="M640 1353 V1390" class="flowBlue"/>
+  <rect x="330" y="1390" width="620" height="85" class="box" fill="#cbe7fa" stroke="#377dbe"/>
+  <text x="640" y="1425" text-anchor="middle" class="label">全局特征 G</text>
+  <text x="640" y="1454" text-anchor="middle" class="code">G ∈ R^(B×64×H×W)</text>
+  <text x="640" y="1530" text-anchor="middle" class="small">作用：通过四向序列扫描建模长程、双向的全局空间依赖。</text>
+
+  <!-- local panel -->
+  <rect x="1390" y="405" width="1140" height="1190" rx="22" fill="#fff8f0" stroke="#e3a45f" stroke-width="3"/>
+  <rect x="1390" y="405" width="1140" height="58" rx="20" fill="#d87928"/>
+  <text x="1960" y="444" text-anchor="middle" class="panelTitle">局部编码分支  LocalFeature = AKDECGALocalFeatureExtraction</text>
+  <rect x="1440" y="486" width="1040" height="68" rx="12" fill="#fff" stroke="#ebc395"/>
+  <text x="1960" y="528" text-anchor="middle" class="label">输入 F₀ (B×64×H×W) → AKDEConv → SingleInputCGAEnhance</text>
+  <path d="M1960 554 V600" class="flowOrange"/>
+
+  <rect x="1440" y="600" width="1040" height="340" class="box" fill="#fff0df" stroke="#e3a45f"/>
+  <text x="1960" y="638" text-anchor="middle" class="section">① AKDEConv：差分边缘 + 自适应卷积的局部特征提取</text>
+  <rect x="1475" y="676" width="470" height="209" rx="12" fill="#fff" stroke="#e9bd87"/>
+  <text x="1710" y="711" text-anchor="middle" class="label">五种 3×3 卷积核（先融合权重）</text>
+  <text x="1710" y="744" text-anchor="middle" class="body">中心差分 CD + 水平差分 HD + 垂直差分 VD</text>
+  <text x="1710" y="773" text-anchor="middle" class="body">+ 对角差分 AD + 标准 Conv</text>
+  <text x="1710" y="809" text-anchor="middle" class="code">W = Wcd+Whd+Wvd+Wad+Wstd</text>
+  <text x="1710" y="838" text-anchor="middle" class="code">D = Conv2d(F₀, W, b, 3×3)</text>
+  <rect x="1990" y="676" width="455" height="209" rx="12" fill="#fff" stroke="#e9bd87"/>
+  <text x="2217" y="711" text-anchor="middle" class="label">并联 AKCBlock（可变形采样）</text>
+  <text x="2217" y="744" text-anchor="middle" class="body">3×3 offset conv → 9-point grid_sample</text>
+  <text x="2217" y="773" text-anchor="middle" class="body">→ 可学习权重加权 → 1×1 mix₁ → 1×1 mix₂</text>
+  <text x="2217" y="809" text-anchor="middle" class="code">A = F₀ + mix₂(mix₁(AKConv₉(F₀)))</text>
+  <text x="2217" y="838" text-anchor="middle" class="body">自适应局部几何 / 纹理采样</text>
+  <text x="1960" y="918" text-anchor="middle" class="code">F₁ = D + A   （两路逐元素相加，B×64×H×W）</text>
+  <path d="M1960 940 V975" class="flowOrange"/>
+
+  <rect x="1440" y="975" width="1040" height="330" class="box" fill="#fff0df" stroke="#e3a45f"/>
+  <text x="1960" y="1013" text-anchor="middle" class="section">② CGA：空间、通道、像素三级局部注意力</text>
+  <rect x="1475" y="1050" width="290" height="170" rx="12" fill="#fff" stroke="#e9bd87"/>
+  <text x="1620" y="1086" text-anchor="middle" class="label">Spatial Attention</text>
+  <text x="1620" y="1118" text-anchor="middle" class="body">channel mean + max</text>
+  <text x="1620" y="1146" text-anchor="middle" class="body">concat → 7×7 Conv</text>
+  <text x="1620" y="1182" text-anchor="middle" class="code">SA(F₁) ∈ R^(B×1×H×W)</text>
+  <rect x="1815" y="1050" width="290" height="170" rx="12" fill="#fff" stroke="#e9bd87"/>
+  <text x="1960" y="1086" text-anchor="middle" class="label">Channel Attention</text>
+  <text x="1960" y="1118" text-anchor="middle" class="body">GAP → 1×1 Conv (64→8)</text>
+  <text x="1960" y="1146" text-anchor="middle" class="body">ReLU → 1×1 Conv (8→64)</text>
+  <text x="1960" y="1182" text-anchor="middle" class="code">CA(F₁) ∈ R^(B×64×1×1)</text>
+  <rect x="2155" y="1050" width="290" height="170" rx="12" fill="#fff" stroke="#e9bd87"/>
+  <text x="2300" y="1086" text-anchor="middle" class="label">Pixel Attention</text>
+  <text x="2300" y="1118" text-anchor="middle" class="body">stack(F₁, SA+CA)</text>
+  <text x="2300" y="1146" text-anchor="middle" class="body">→ grouped 7×7 Conv → sigmoid</text>
+  <text x="2300" y="1182" text-anchor="middle" class="code">P ∈ R^(B×64×H×W)</text>
+  <path d="M1765 1135 H1800" class="flowOrange"/>
+  <path d="M2105 1135 H2140" class="flowOrange"/>
+  <text x="1960" y="1268" text-anchor="middle" class="code">F₂ = 1×1 Conv( F₁ + P ⊙ F₁ )   （输出投影初始化为恒等映射）</text>
+  <path d="M1960 1305 V1340" class="flowOrange"/>
+  <rect x="1650" y="1340" width="620" height="85" class="box" fill="#fde0c0" stroke="#d87928"/>
+  <text x="1960" y="1375" text-anchor="middle" class="label">局部特征 L</text>
+  <text x="1960" y="1404" text-anchor="middle" class="code">L ∈ R^(B×64×H×W)</text>
+  <text x="1960" y="1480" text-anchor="middle" class="small">作用：保留边缘、纹理与可变形局部结构；当前局部分支本身不包含 Mamba。</text>
+
+  <!-- outputs and integration -->
+  <path d="M640 1475 V1625 H1130" class="flowBlue"/>
+  <path d="M1960 1425 V1625 H1470" class="flowOrange"/>
+  <rect x="1130" y="1575" width="340" height="100" rx="15" fill="#eef2f7" stroke="#718096" stroke-width="2.5"/>
+  <text x="1300" y="1616" text-anchor="middle" class="label">编码器输出</text>
+  <text x="1300" y="1648" text-anchor="middle" class="code">return (G, L, F₀)</text>
+  <text x="1300" y="1690" text-anchor="middle" class="small">后续由 GlobalLocalCrossModalMambaBlock 接收 G 与 L 进行跨模态交互。</text>
+</svg>

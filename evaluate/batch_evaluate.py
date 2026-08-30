@@ -30,6 +30,7 @@ import json
 import os
 import random
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -174,6 +175,24 @@ def get_project_defaults() -> Mapping[str, object]:
             #     "vis_dir": "E:/workspace/python_work/dataSet/FMB/test/Visible",
             #     "num_pairs": 280,
             # },
+            # "SPECT-MRI": {
+            #     "ir_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/SPECT-MRI/MRI"),
+            #     "vis_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/SPECT-MRI/SPECT"),
+            #     "num_pairs": 357,
+            #     "task": "mif",
+            # },
+            # "CT-MRI": {
+            #     "ir_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/CT-MRI/CT"),
+            #     "vis_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/CT-MRI/MRI"),
+            #     "num_pairs": 184,
+            #     "task": "mif",
+            # },
+            # "PET-MRI": {
+            #     "ir_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/PET-MRI/PET"),
+            #     "vis_dir": os.path.expanduser(r"E:/workspace/python_work/dataSet/Havard/Havard-Medical-Image-Fusion-Datasets-main/PET-MRI/MRI"),
+            #     "num_pairs": 269,
+            #     "task": "mif",
+            # },
             # 鏈嶅姟鍣?
             "RoadScence": {
                 "ir_dir": os.path.expanduser(r"~/rivermind-data/dataSets/RoadScene/ir"),
@@ -199,6 +218,34 @@ def get_project_defaults() -> Mapping[str, object]:
                 "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/ir"),
                 "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/40_vot_tno/vis"),
                 "num_pairs": 40,
+            },
+            "SPECT-MRI": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/SPECT-MRI/MRI"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/SPECT-MRI/SPECT"),
+                "num_pairs": 357,
+                "task": "mif",
+            },
+            "CT-MRI": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/CT-MRI/CT"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/CT-MRI/MRI"),
+                "num_pairs": 184,
+                "task": "mif",
+            },
+            "PET-MRI": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/PET-MRI/PET"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/Havard-Medical-Image-Fusion-Datasets/PET-MRI/MRI"),
+                "num_pairs": 269,
+                "task": "mif",
+            },
+            "MSRS_detection": {
+                "ir_dir" : os.path.expanduser(r"/root/rivermind-data/dataSets/MSRS-main/detection/ir"),
+                "vis_dir" : os.path.expanduser(r"/root/rivermind-data/dataSets/MSRS-main/detection/vi"),
+                "num_pairs": 80,
+            },
+            "RGB_NIR": {
+                "ir_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/RGB_NIR/test_png/ir"),
+                "vis_dir": os.path.expanduser(r"/root/rivermind-data/dataSets/RGB_NIR/test_png/vi"),
+                "num_pairs": 477,
             },
         },
         "default_dataset": "MSRS-main",
@@ -577,7 +624,12 @@ def run_fusion_prediction(
             eval_size=eval_size,
         )
     except Exception as exc:
-        print(f"Fusion error for {os.path.basename(output_path)}: {exc}")
+        print(
+            f"Fusion error for {os.path.basename(output_path)}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        if debug:
+            traceback.print_exc()
         return False, None
 
 

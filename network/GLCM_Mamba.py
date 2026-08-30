@@ -9,8 +9,11 @@ from .SpatialMamba import LayerNorm
 
 try:
     from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
-except ImportError:
+except ImportError as exc:
     selective_scan_fn = None
+    MAMBA_IMPORT_ERROR = exc
+else:
+    MAMBA_IMPORT_ERROR = None
 
 try:
     from causal_conv1d import causal_conv1d_fn
@@ -38,7 +41,8 @@ class SSMOnlySeqBlock(nn.Module):
         if selective_scan_fn is None:
             raise ImportError(
                 "SSMOnlySeqBlock requires mamba_ssm. Install mamba-ssm "
-                "in the training environment before using HFRM-Mamba."
+                "in the training environment before using HFRM-Mamba. "
+                f"Original import error: {MAMBA_IMPORT_ERROR!r}"
             )
 
         self.dim = dim

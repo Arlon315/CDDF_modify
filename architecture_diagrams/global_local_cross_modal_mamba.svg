@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="2020" viewBox="0 0 3000 2020">
+  <defs>
+    <marker id="arr" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#4c5c6c"/></marker>
+    <marker id="arrIR" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#287ab8"/></marker>
+    <marker id="arrVI" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#8b5bb7"/></marker>
+    <marker id="arrGlobal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#287ab8"/></marker>
+    <marker id="arrLocal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#d77826"/></marker>
+    <style>
+      .title{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:44px;font-weight:700;fill:#1f2d3d}
+      .sub{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:23px;fill:#526579}
+      .panel{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:27px;font-weight:700;fill:#fff}
+      .head{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:24px;font-weight:700;fill:#203a53}
+      .label{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:21px;font-weight:700;fill:#243849}
+      .body{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:18px;fill:#385168}
+      .small{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:16px;fill:#4f667b}
+      .code{font-family:Consolas,'Courier New',monospace;font-size:17px;fill:#28475e}
+      .box{stroke-width:2.2;rx:14;ry:14}
+      .flow{fill:none;stroke:#4c5c6c;stroke-width:3;marker-end:url(#arr)}
+      .ir{fill:none;stroke:#287ab8;stroke-width:3;marker-end:url(#arrIR)}
+      .vi{fill:none;stroke:#8b5bb7;stroke-width:3;marker-end:url(#arrVI)}
+      .g{fill:none;stroke:#287ab8;stroke-width:3;marker-end:url(#arrGlobal)}
+      .l{fill:none;stroke:#d77826;stroke-width:3;marker-end:url(#arrLocal)}
+      .dash{fill:none;stroke:#6f7f8e;stroke-width:2.5;stroke-dasharray:8 6;marker-end:url(#arr)}
+    </style>
+  </defs>
+
+  <rect width="3000" height="2020" fill="#f7f9fc"/>
+  <text x="1500" y="68" text-anchor="middle" class="title">GLCM：全局—局部跨模态 Mamba 增强模块</text>
+  <text x="1500" y="106" text-anchor="middle" class="sub">GlobalLocalCrossModalMambaBlock（dim=64） · 输入的四个特征必须同形状 B×64×H×W</text>
+
+  <!-- legend -->
+  <rect x="2220" y="130" width="700" height="76" rx="12" fill="#fff" stroke="#cbd8e4"/>
+  <rect x="2242" y="151" width="18" height="18" fill="#dceefa" stroke="#287ab8"/><text x="2274" y="167" class="small">IR</text>
+  <rect x="2334" y="151" width="18" height="18" fill="#ecdef8" stroke="#8b5bb7"/><text x="2366" y="167" class="small">VI</text>
+  <rect x="2428" y="151" width="18" height="18" fill="#dceefa" stroke="#287ab8"/><text x="2460" y="167" class="small">全局分支</text>
+  <rect x="2570" y="151" width="18" height="18" fill="#fff0df" stroke="#d77826"/><text x="2602" y="167" class="small">局部分支</text>
+  <path d="M2715 160 H2762" class="dash"/><text x="2780" y="167" class="small">残差 / 原特征</text>
+
+  <!-- top inputs -->
+  <rect x="80" y="238" width="640" height="525" rx="20" fill="#f3f9fd" stroke="#69a9d7" stroke-width="3"/>
+  <rect x="80" y="238" width="640" height="57" rx="18" fill="#287ab8"/><text x="400" y="277" text-anchor="middle" class="panel">IR 全局通路</text>
+  <rect x="90" y="318" width="620" height="70" class="box" fill="#dceefa" stroke="#62a1d1"/>
+  <text x="400" y="347" text-anchor="middle" class="label">IR 全局特征 Iᴳ</text><text x="400" y="374" text-anchor="middle" class="code">B×64×H×W</text>
+  <path d="M400 388 V420" class="ir"/>
+  <rect x="150" y="420" width="500" height="70" class="box" fill="#fff" stroke="#9bc3e0"/>
+  <text x="400" y="449" text-anchor="middle" class="label">WithBias LayerNorm</text><text x="400" y="476" text-anchor="middle" class="small">沿通道维归一化；空间尺寸不变</text>
+  <path d="M400 490 V520" class="ir"/>
+  <rect x="150" y="520" width="500" height="78" class="box" fill="#e8f4fc" stroke="#62a1d1"/>
+  <text x="400" y="551" text-anchor="middle" class="label">IR Global SSMOnly4Path</text><text x="400" y="578" text-anchor="middle" class="small">4 方向 SSM 聚合 → 1×1 Conv</text>
+  <path d="M400 598 V626" class="ir"/>
+  <rect x="150" y="626" width="500" height="82" class="box" fill="#dceefa" stroke="#62a1d1"/>
+  <text x="400" y="657" text-anchor="middle" class="label">IR Global Gate</text><text x="400" y="684" text-anchor="middle" class="code">DWConv3×3 → SiLU → Conv1×1 → Sigmoid</text>
+  <path d="M400 708 V738" class="ir"/>
+  <rect x="240" y="738" width="320" height="53" rx="12" fill="#c7e5f9" stroke="#287ab8" stroke-width="2.5"/>
+  <text x="400" y="773" text-anchor="middle" class="code">αIᴳ ∈ (0,1)^(B×64×H×W)</text>
+
+  <rect x="790" y="238" width="640" height="525" rx="20" fill="#fff9f2" stroke="#e1a35e" stroke-width="3"/>
+  <rect x="790" y="238" width="640" height="57" rx="18" fill="#d77826"/><text x="1110" y="277" text-anchor="middle" class="panel">IR 局部通路</text>
+  <rect x="800" y="318" width="620" height="70" class="box" fill="#fff0df" stroke="#e1a35e"/>
+  <text x="1110" y="347" text-anchor="middle" class="label">IR 局部特征 Iᴸ</text><text x="1110" y="374" text-anchor="middle" class="code">B×64×H×W</text>
+  <path d="M1110 388 V420" class="l"/>
+  <rect x="860" y="420" width="500" height="70" class="box" fill="#fff" stroke="#ebc495"/>
+  <text x="1110" y="449" text-anchor="middle" class="label">WithBias LayerNorm</text><text x="1110" y="476" text-anchor="middle" class="small">沿通道维归一化；空间尺寸不变</text>
+  <path d="M1110 490 V520" class="l"/>
+  <rect x="860" y="520" width="500" height="78" class="box" fill="#fff5ea" stroke="#e1a35e"/>
+  <text x="1110" y="551" text-anchor="middle" class="label">IR Local SSMOnly4Path</text><text x="1110" y="578" text-anchor="middle" class="small">4 方向 SSM 聚合 → 1×1 Conv</text>
+  <path d="M1110 598 V626" class="l"/>
+  <rect x="860" y="626" width="500" height="82" class="box" fill="#fff0df" stroke="#e1a35e"/>
+  <text x="1110" y="657" text-anchor="middle" class="label">IR Local Gate</text><text x="1110" y="684" text-anchor="middle" class="code">DWConv3×3 → SiLU → Conv1×1 → Sigmoid</text>
+  <path d="M1110 708 V738" class="l"/>
+  <rect x="950" y="738" width="320" height="53" rx="12" fill="#fde0c0" stroke="#d77826" stroke-width="2.5"/>
+  <text x="1110" y="773" text-anchor="middle" class="code">αIᴸ ∈ (0,1)^(B×64×H×W)</text>
+
+  <rect x="1570" y="238" width="640" height="525" rx="20" fill="#faf6fd" stroke="#a07bc8" stroke-width="3"/>
+  <rect x="1570" y="238" width="640" height="57" rx="18" fill="#8b5bb7"/><text x="1890" y="277" text-anchor="middle" class="panel">VI 全局通路</text>
+  <rect x="1580" y="318" width="620" height="70" class="box" fill="#ecdef8" stroke="#a07bc8"/>
+  <text x="1890" y="347" text-anchor="middle" class="label">VI 全局特征 Vᴳ</text><text x="1890" y="374" text-anchor="middle" class="code">B×64×H×W</text>
+  <path d="M1890 388 V420" class="vi"/>
+  <rect x="1650" y="420" width="500" height="70" class="box" fill="#fff" stroke="#c0a5d9"/>
+  <text x="1890" y="449" text-anchor="middle" class="label">WithBias LayerNorm</text><text x="1890" y="476" text-anchor="middle" class="small">沿通道维归一化；空间尺寸不变</text>
+  <path d="M1890 490 V520" class="vi"/>
+  <rect x="1650" y="520" width="500" height="78" class="box" fill="#f4ebfc" stroke="#a07bc8"/>
+  <text x="1890" y="551" text-anchor="middle" class="label">VI Global SSMOnly4Path</text><text x="1890" y="578" text-anchor="middle" class="small">4 方向 SSM 聚合 → 1×1 Conv</text>
+  <path d="M1890 598 V626" class="vi"/>
+  <rect x="1650" y="626" width="500" height="82" class="box" fill="#ecdef8" stroke="#a07bc8"/>
+  <text x="1890" y="657" text-anchor="middle" class="label">VI Global Gate</text><text x="1890" y="684" text-anchor="middle" class="code">DWConv3×3 → SiLU → Conv1×1 → Sigmoid</text>
+  <path d="M1890 708 V738" class="vi"/>
+  <rect x="1730" y="738" width="320" height="53" rx="12" fill="#e6d4f5" stroke="#8b5bb7" stroke-width="2.5"/>
+  <text x="1890" y="773" text-anchor="middle" class="code">αVᴳ ∈ (0,1)^(B×64×H×W)</text>
+
+  <rect x="2280" y="238" width="640" height="525" rx="20" fill="#f7fbf6" stroke="#84ad82" stroke-width="3"/>
+  <rect x="2280" y="238" width="640" height="57" rx="18" fill="#658e61"/><text x="2600" y="277" text-anchor="middle" class="panel">VI 局部通路</text>
+  <rect x="2290" y="318" width="620" height="70" class="box" fill="#e5f1e4" stroke="#84ad82"/>
+  <text x="2600" y="347" text-anchor="middle" class="label">VI 局部特征 Vᴸ</text><text x="2600" y="374" text-anchor="middle" class="code">B×64×H×W</text>
+  <path d="M2600 388 V420" class="flow"/>
+  <rect x="2360" y="420" width="500" height="70" class="box" fill="#fff" stroke="#a9c5a7"/>
+  <text x="2600" y="449" text-anchor="middle" class="label">WithBias LayerNorm</text><text x="2600" y="476" text-anchor="middle" class="small">沿通道维归一化；空间尺寸不变</text>
+  <path d="M2600 490 V520" class="flow"/>
+  <rect x="2360" y="520" width="500" height="78" class="box" fill="#f0f8ef" stroke="#84ad82"/>
+  <text x="2600" y="551" text-anchor="middle" class="label">VI Local SSMOnly4Path</text><text x="2600" y="578" text-anchor="middle" class="small">4 方向 SSM 聚合 → 1×1 Conv</text>
+  <path d="M2600 598 V626" class="flow"/>
+  <rect x="2360" y="626" width="500" height="82" class="box" fill="#e5f1e4" stroke="#84ad82"/>
+  <text x="2600" y="657" text-anchor="middle" class="label">VI Local Gate</text><text x="2600" y="684" text-anchor="middle" class="code">DWConv3×3 → SiLU → Conv1×1 → Sigmoid</text>
+  <path d="M2600 708 V738" class="flow"/>
+  <rect x="2440" y="738" width="320" height="53" rx="12" fill="#d8ead6" stroke="#658e61" stroke-width="2.5"/>
+  <text x="2600" y="773" text-anchor="middle" class="code">αVᴸ ∈ (0,1)^(B×64×H×W)</text>
+
+  <!-- Cross modal exchange -->
+  <rect x="80" y="838" width="2840" height="415" rx="20" fill="#fff" stroke="#9aaaba" stroke-width="3"/>
+  <rect x="80" y="838" width="2840" height="58" rx="18" fill="#536e87"/>
+  <text x="1500" y="877" text-anchor="middle" class="panel">跨模态门控交换：注意力图作用于另一模态的同尺度特征</text>
+  <text x="1500" y="925" text-anchor="middle" class="body">⊙ 为逐元素乘法；每一个增强特征都保留自身的残差路径</text>
+
+  <rect x="125" y="962" width="1310" height="238" rx="16" fill="#f4f9fd" stroke="#74a9d0" stroke-width="2.5"/>
+  <text x="780" y="998" text-anchor="middle" class="head">全局层级（Global ↔ Global）</text>
+  <rect x="164" y="1030" width="550" height="125" class="box" fill="#dceefa" stroke="#62a1d1"/>
+  <text x="439" y="1066" text-anchor="middle" class="label">IR 全局增强特征 Ĩᴳ</text>
+  <text x="439" y="1100" text-anchor="middle" class="code">Ĩᴳ = Iᴳ ⊙ αVᴳ + Iᴳ</text>
+  <text x="439" y="1132" text-anchor="middle" class="small">VI 全局门控图增强 IR 全局特征</text>
+  <rect x="846" y="1030" width="550" height="125" class="box" fill="#ecdef8" stroke="#a07bc8"/>
+  <text x="1121" y="1066" text-anchor="middle" class="label">VI 全局增强特征 Ṽᴳ</text>
+  <text x="1121" y="1100" text-anchor="middle" class="code">Ṽᴳ = Vᴳ ⊙ αIᴳ + Vᴳ</text>
+  <text x="1121" y="1132" text-anchor="middle" class="small">IR 全局门控图增强 VI 全局特征</text>
+  <path d="M400 791 V1014 H439" class="ir"/>
+  <path d="M1890 791 V990 H714 V1092" class="vi"/>
+  <path d="M1890 791 V1014 H1121" class="vi"/>
+  <path d="M400 791 V990 H846 V1092" class="ir"/>
+
+  <rect x="1565" y="962" width="1310" height="238" rx="16" fill="#fff9f2" stroke="#e1a35e" stroke-width="2.5"/>
+  <text x="2220" y="998" text-anchor="middle" class="head">局部层级（Local ↔ Local）</text>
+  <rect x="1604" y="1030" width="550" height="125" class="box" fill="#fff0df" stroke="#e1a35e"/>
+  <text x="1879" y="1066" text-anchor="middle" class="label">IR 局部增强特征 Ĩᴸ</text>
+  <text x="1879" y="1100" text-anchor="middle" class="code">Ĩᴸ = Iᴸ ⊙ αVᴸ + Iᴸ</text>
+  <text x="1879" y="1132" text-anchor="middle" class="small">VI 局部门控图增强 IR 局部特征</text>
+  <rect x="2286" y="1030" width="550" height="125" class="box" fill="#e5f1e4" stroke="#84ad82"/>
+  <text x="2561" y="1066" text-anchor="middle" class="label">VI 局部增强特征 Ṽᴸ</text>
+  <text x="2561" y="1100" text-anchor="middle" class="code">Ṽᴸ = Vᴸ ⊙ αIᴸ + Vᴸ</text>
+  <text x="2561" y="1132" text-anchor="middle" class="small">IR 局部门控图增强 VI 局部特征</text>
+  <path d="M1110 791 V1014 H1879" class="l"/>
+  <path d="M2600 791 V990 H2154 V1092" class="flow"/>
+  <path d="M2600 791 V1014 H2561" class="flow"/>
+  <path d="M1110 791 V990 H2286 V1092" class="l"/>
+
+  <!-- fusion -->
+  <rect x="80" y="1305" width="2840" height="250" rx="20" fill="#f9fbfd" stroke="#9aaaba" stroke-width="3"/>
+  <rect x="80" y="1305" width="2840" height="57" rx="18" fill="#536e87"/>
+  <text x="1500" y="1344" text-anchor="middle" class="panel">模态内全局—局部融合与输出</text>
+  <rect x="255" y="1395" width="1020" height="110" class="box" fill="#eff7fc" stroke="#62a1d1"/>
+  <text x="765" y="1430" text-anchor="middle" class="label">IR 融合</text>
+  <text x="765" y="1462" text-anchor="middle" class="code">cat[Ĩᴳ, Ĩᴸ] : 64+64 = 128 channels</text>
+  <text x="765" y="1490" text-anchor="middle" class="body">1×1 Conv (128→64) → IR enhanced feature</text>
+  <rect x="1725" y="1395" width="1020" height="110" class="box" fill="#f6f1fb" stroke="#a07bc8"/>
+  <text x="2235" y="1430" text-anchor="middle" class="label">VI 融合</text>
+  <text x="2235" y="1462" text-anchor="middle" class="code">cat[Ṽᴳ, Ṽᴸ] : 64+64 = 128 channels</text>
+  <text x="2235" y="1490" text-anchor="middle" class="body">1×1 Conv (128→64) → VI enhanced feature</text>
+  <path d="M439 1155 V1440 H255" class="ir"/>
+  <path d="M1879 1155 V1418 H510" class="l"/>
+  <path d="M1121 1155 V1418 H1020" class="vi"/>
+  <path d="M2561 1155 V1440 H1275" class="flow"/>
+  <path d="M2235 1505 V1540" class="vi"/>
+  <path d="M765 1505 V1540" class="ir"/>
+  <rect x="510" y="1540" width="510" height="75" rx="13" fill="#c7e5f9" stroke="#287ab8" stroke-width="2.5"/>
+  <text x="765" y="1572" text-anchor="middle" class="label">IR enhanced</text><text x="765" y="1600" text-anchor="middle" class="code">B×64×H×W</text>
+  <rect x="1980" y="1540" width="510" height="75" rx="13" fill="#e6d4f5" stroke="#8b5bb7" stroke-width="2.5"/>
+  <text x="2235" y="1572" text-anchor="middle" class="label">VI enhanced</text><text x="2235" y="1600" text-anchor="middle" class="code">B×64×H×W</text>
+
+  <!-- Detailed SSMOnly4Path inset -->
+  <rect x="80" y="1665" width="2840" height="305" rx="20" fill="#fff" stroke="#6d9fc2" stroke-width="3"/>
+  <rect x="80" y="1665" width="2840" height="57" rx="18" fill="#3d789f"/>
+  <text x="1500" y="1704" text-anchor="middle" class="panel">SSMOnly4Path 细节（四条路径 × 四个通路 = 16 个独立 SSMOnlySeqBlock）</text>
+  <text x="176" y="1760" class="label">输入 A (B×64×H×W)</text>
+  <rect x="150" y="1790" width="500" height="114" class="box" fill="#eef6fb" stroke="#78afd5"/>
+  <text x="400" y="1823" text-anchor="middle" class="label">四方向展平（独立参数）</text>
+  <text x="400" y="1851" text-anchor="middle" class="code">h→ / flip(h→) / v↓ / flip(v↓)</text>
+  <text x="400" y="1880" text-anchor="middle" class="small">均为 (B,H·W,64) 或 (B,W·H,64)</text>
+  <path d="M650 1847 H720" class="flow"/>
+  <rect x="720" y="1754" width="1130" height="200" class="box" fill="#f4f9fd" stroke="#78afd5"/>
+  <text x="1285" y="1788" text-anchor="middle" class="head">每一个 SSMOnlySeqBlock（dim=64, d_inner=128, d_state=16, d_conv=4, dt_rank=4）</text>
+  <text x="775" y="1830" class="code">in_proj: 64→128</text><text x="1000" y="1830" class="code">DWConv1d(k=4, groups=128)</text><text x="1450" y="1830" class="code">SiLU</text>
+  <path d="M960 1824 H992" class="flow"/><path d="M1390 1824 H1440" class="flow"/>
+  <text x="775" y="1875" class="code">x_proj: 128→(dt:4,B:16,C:16)</text><text x="1250" y="1875" class="code">dt_proj: 4→128 + softplus</text>
+  <path d="M1182 1869 H1237" class="flow"/>
+  <text x="775" y="1920" class="code">SelectiveScan(x, Δ, A=-exp(A_log), B, C, D_skip, z=None) → out_proj: 128→64</text>
+  <text x="1285" y="1945" text-anchor="middle" class="small">关键差异：这里明确 z=None，因此没有标准 Mamba 的 SiLU(z) 输出门控。</text>
+  <path d="M1850 1847 H1920" class="flow"/>
+  <rect x="1920" y="1790" width="470" height="114" class="box" fill="#eef6fb" stroke="#78afd5"/>
+  <text x="2155" y="1823" text-anchor="middle" class="label">复原与聚合</text>
+  <text x="2155" y="1851" text-anchor="middle" class="code">h→ + h← + v↓ + v↑</text>
+  <text x="2155" y="1880" text-anchor="middle" class="body">1×1 Conv (64→64)</text>
+  <path d="M2390 1847 H2460" class="flow"/>
+  <rect x="2460" y="1790" width="360" height="114" class="box" fill="#dceefa" stroke="#62a1d1"/>
+  <text x="2640" y="1832" text-anchor="middle" class="label">SSMOnly4Path(A)</text>
+  <text x="2640" y="1864" text-anchor="middle" class="code">B×64×H×W</text>
+  <text x="2640" y="1892" text-anchor="middle" class="small">送入外部 Gate</text>
+</svg>

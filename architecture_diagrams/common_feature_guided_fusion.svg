@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3200" height="2200" viewBox="0 0 3200 2200">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#4a5a6a"/></marker>
+    <marker id="ir" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#2d7fb9"/></marker>
+    <marker id="vi" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#8b5cba"/></marker>
+    <marker id="common" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 Z" fill="#cc6177"/></marker>
+    <style>
+      .title{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:46px;font-weight:700;fill:#1e2c3a}
+      .sub{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:23px;fill:#52687d}
+      .bar{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:28px;font-weight:700;fill:#fff}
+      .head{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:25px;font-weight:700;fill:#21425d}
+      .label{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:21px;font-weight:700;fill:#233849}
+      .body{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:18px;fill:#38536a}
+      .small{font-family:'Microsoft YaHei',Arial,sans-serif;font-size:16px;fill:#52687d}
+      .code{font-family:Consolas,'Courier New',monospace;font-size:17px;fill:#29485f}
+      .box{stroke-width:2.2;rx:14;ry:14}
+      .flow{fill:none;stroke:#4a5a6a;stroke-width:3;marker-end:url(#arrow)}
+      .irf{fill:none;stroke:#2d7fb9;stroke-width:3;marker-end:url(#ir)}
+      .vif{fill:none;stroke:#8b5cba;stroke-width:3;marker-end:url(#vi)}
+      .cf{fill:none;stroke:#cc6177;stroke-width:3;marker-end:url(#common)}
+      .skip{fill:none;stroke:#687987;stroke-width:2.5;stroke-dasharray:8 6;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="3200" height="2200" fill="#f7f9fc"/>
+  <text x="1600" y="70" text-anchor="middle" class="title">共同特征引导融合模块（CMFB）详细架构图</text>
+  <text x="1600" y="108" text-anchor="middle" class="sub">CommenMambaFusionBlock · 输入来自 GLCM 的 IR / VI 增强特征 · dim=64，空间尺度 H×W 保持不变</text>
+
+  <!-- colour legend -->
+  <rect x="2380" y="135" width="720" height="74" rx="12" fill="#fff" stroke="#cbd8e4"/>
+  <rect x="2410" y="155" width="18" height="18" fill="#dceefa" stroke="#2d7fb9"/><text x="2441" y="171" class="small">IR 私有流</text>
+  <rect x="2558" y="155" width="18" height="18" fill="#ecdef8" stroke="#8b5cba"/><text x="2589" y="171" class="small">VI 私有流</text>
+  <rect x="2706" y="155" width="18" height="18" fill="#fde4e9" stroke="#cc6177"/><text x="2737" y="171" class="small">共同特征 / 共同 Z</text>
+  <path d="M2900 164 H2950" class="skip"/><text x="2970" y="171" class="small">残差</text>
+
+  <!-- Overall CMFB -->
+  <rect x="70" y="235" width="3060" height="995" rx="22" fill="#fff" stroke="#8299ac" stroke-width="3"/>
+  <rect x="70" y="235" width="3060" height="58" rx="20" fill="#4c6f8c"/>
+  <text x="1600" y="275" text-anchor="middle" class="bar">CMFB 总体数据流：共同全局 Mamba 引导 + 模态私有局部补偿 + 可学习投影融合</text>
+
+  <!-- Inputs -->
+  <rect x="155" y="333" width="530" height="86" class="box" fill="#dceefa" stroke="#62a1d1"/>
+  <text x="420" y="368" text-anchor="middle" class="label">IR 增强特征 I</text><text x="420" y="397" text-anchor="middle" class="code">B×64×H×W</text>
+  <rect x="2515" y="333" width="530" height="86" class="box" fill="#ecdef8" stroke="#a07bc8"/>
+  <text x="2780" y="368" text-anchor="middle" class="label">VI 增强特征 V</text><text x="2780" y="397" text-anchor="middle" class="code">B×64×H×W</text>
+  <path d="M420 419 V465" class="irf"/><path d="M2780 419 V465" class="vif"/>
+
+  <!-- norms -->
+  <rect x="180" y="465" width="480" height="72" class="box" fill="#fff" stroke="#a2c5df"/>
+  <text x="420" y="495" text-anchor="middle" class="label">IR LayerNorm (WithBias)</text><text x="420" y="522" text-anchor="middle" class="small">仅用于共同全局分支</text>
+  <rect x="2540" y="465" width="480" height="72" class="box" fill="#fff" stroke="#bea7d8"/>
+  <text x="2780" y="495" text-anchor="middle" class="label">VI LayerNorm (WithBias)</text><text x="2780" y="522" text-anchor="middle" class="small">仅用于共同全局分支</text>
+  <path d="M420 537 V580 H780" class="irf"/><path d="M2780 537 V580 H2420" class="vif"/>
+
+  <!-- shared global mamba -->
+  <rect x="780" y="372" width="1640" height="430" rx="18" fill="#f6f9fc" stroke="#6392b3" stroke-width="3"/>
+  <rect x="780" y="372" width="1640" height="53" rx="16" fill="#3d789f"/>
+  <text x="1600" y="408" text-anchor="middle" class="bar">共同全局交互：GlobalMamba4Path</text>
+  <text x="1600" y="454" text-anchor="middle" class="body">将归一化的 IR、VI 特征按相同空间顺序转换为成对序列；每个方向使用独立的 CommonZMambaSeqBlock。</text>
+
+  <rect x="825" y="485" width="350" height="155" class="box" fill="#eef6fb" stroke="#6ca6cf"/>
+  <text x="1000" y="519" text-anchor="middle" class="label">水平正向 h→</text>
+  <text x="1000" y="550" text-anchor="middle" class="code">reshape(B,H·W,64)</text>
+  <text x="1000" y="580" text-anchor="middle" class="small">IR 与 VI 同步扫描</text>
+  <text x="1000" y="611" text-anchor="middle" class="small">CommonZ Block₀</text>
+  <rect x="1215" y="485" width="350" height="155" class="box" fill="#eef6fb" stroke="#6ca6cf"/>
+  <text x="1390" y="519" text-anchor="middle" class="label">水平反向 h←</text>
+  <text x="1390" y="550" text-anchor="middle" class="code">flip(h→), reshape(B,H·W,64)</text>
+  <text x="1390" y="580" text-anchor="middle" class="small">IR 与 VI 同步反转</text>
+  <text x="1390" y="611" text-anchor="middle" class="small">CommonZ Block₁</text>
+  <rect x="1605" y="485" width="350" height="155" class="box" fill="#eef6fb" stroke="#6ca6cf"/>
+  <text x="1780" y="519" text-anchor="middle" class="label">垂直正向 v↓</text>
+  <text x="1780" y="550" text-anchor="middle" class="code">reshape(B,W·H,64)</text>
+  <text x="1780" y="580" text-anchor="middle" class="small">按宽—高顺序扫描</text>
+  <text x="1780" y="611" text-anchor="middle" class="small">CommonZ Block₂</text>
+  <rect x="1995" y="485" width="380" height="155" class="box" fill="#eef6fb" stroke="#6ca6cf"/>
+  <text x="2185" y="519" text-anchor="middle" class="label">垂直反向 v↑</text>
+  <text x="2185" y="550" text-anchor="middle" class="code">flip(v↓), reshape(B,W·H,64)</text>
+  <text x="2185" y="580" text-anchor="middle" class="small">IR 与 VI 同步反转</text>
+  <text x="2185" y="611" text-anchor="middle" class="small">CommonZ Block₃</text>
+
+  <text x="1600" y="687" text-anchor="middle" class="code">C_I = Σ{h→,h←,v↓,v↑}_IR   C_V = Σ{h→,h←,v↓,v↑}_VI</text>
+  <text x="1600" y="719" text-anchor="middle" class="small">反向序列在输出后 flip 回原方向，再重组为 B×64×H×W；该模块按方向直接求和，不使用额外 1×1 投影。</text>
+  <rect x="905" y="741" width="450" height="70" class="box" fill="#c7e5f9" stroke="#2d7fb9"/>
+  <text x="1130" y="770" text-anchor="middle" class="label">IR 共同全局特征 C_I</text><text x="1130" y="797" text-anchor="middle" class="code">B×64×H×W</text>
+  <rect x="1845" y="741" width="450" height="70" class="box" fill="#e6d4f5" stroke="#8b5cba"/>
+  <text x="2070" y="770" text-anchor="middle" class="label">VI 共同全局特征 C_V</text><text x="2070" y="797" text-anchor="middle" class="code">B×64×H×W</text>
+
+  <!-- raw input to private -->
+  <path d="M420 419 V864 H570" class="irf"/><path d="M2780 419 V864 H2630" class="vif"/>
+  <rect x="250" y="864" width="640" height="145" class="box" fill="#eef6fb" stroke="#62a1d1"/>
+  <text x="570" y="899" text-anchor="middle" class="head">IR 私有局部补偿：AKCBlock</text>
+  <text x="570" y="932" text-anchor="middle" class="code">AKConv₂d(9 个自适应采样点) → 1×1 mix₁ → 1×1 mix₂</text>
+  <text x="570" y="964" text-anchor="middle" class="code">P_I = I + mix₂(mix₁(AKConv₉(I)))</text>
+  <rect x="2310" y="864" width="640" height="145" class="box" fill="#f6f1fb" stroke="#a07bc8"/>
+  <text x="2630" y="899" text-anchor="middle" class="head">VI 私有局部补偿：AKCBlock</text>
+  <text x="2630" y="932" text-anchor="middle" class="code">AKConv₂d(9 个自适应采样点) → 1×1 mix₁ → 1×1 mix₂</text>
+  <text x="2630" y="964" text-anchor="middle" class="code">P_V = V + mix₂(mix₁(AKConv₉(V)))</text>
+
+  <!-- enhancement add -->
+  <path d="M1130 811 V1045 H1040" class="irf"/><path d="M570 1009 V1045 H960" class="irf"/>
+  <circle cx="1000" cy="1075" r="30" fill="#fff" stroke="#2d7fb9" stroke-width="3"/><text x="1000" y="1085" text-anchor="middle" class="label">⊕</text>
+  <text x="1000" y="1130" text-anchor="middle" class="code">E_I = C_I + P_I</text>
+  <path d="M2070 811 V1045 H2160" class="vif"/><path d="M2630 1009 V1045 H2240" class="vif"/>
+  <circle cx="2200" cy="1075" r="30" fill="#fff" stroke="#8b5cba" stroke-width="3"/><text x="2200" y="1085" text-anchor="middle" class="label">⊕</text>
+  <text x="2200" y="1130" text-anchor="middle" class="code">E_V = C_V + P_V</text>
+  <path d="M1000 1105 V1155 H1430" class="irf"/><path d="M2200 1105 V1155 H1770" class="vif"/>
+  <rect x="1240" y="1155" width="720" height="70" class="box" fill="#f0f3f7" stroke="#748a9d"/>
+  <text x="1600" y="1185" text-anchor="middle" class="label">Concat[E_I, E_V]：B×128×H×W</text><text x="1600" y="1212" text-anchor="middle" class="small">沿通道维拼接</text>
+  <path d="M1600 1225 V1260" class="flow"/>
+  <rect x="1295" y="1260" width="610" height="80" class="box" fill="#e5edf4" stroke="#748a9d"/>
+  <text x="1600" y="1293" text-anchor="middle" class="label">fusion_proj：1×1 Conv，128→64</text>
+  <text x="1600" y="1321" text-anchor="middle" class="small">初始为通道对应相加：F₀ = E_I + E_V</text>
+  <path d="M1600 1340 V1370" class="flow"/>
+  <rect x="1335" y="1370" width="530" height="75" class="box" fill="#cbe6d3" stroke="#648d70"/>
+  <text x="1600" y="1402" text-anchor="middle" class="label">融合特征 F → Decoder</text><text x="1600" y="1430" text-anchor="middle" class="code">B×64×H×W</text>
+
+  <!-- inset Common Z SSM -->
+  <rect x="70" y="1500" width="3060" height="625" rx="22" fill="#fff" stroke="#b88c9a" stroke-width="3"/>
+  <rect x="70" y="1500" width="3060" height="58" rx="20" fill="#a74d63"/>
+  <text x="1600" y="1540" text-anchor="middle" class="bar">单方向 CommonZMambaSeqBlock 细节：私有状态更新由共同 Z 同步门控</text>
+
+  <rect x="145" y="1605" width="510" height="185" class="box" fill="#eef6fb" stroke="#62a1d1"/>
+  <text x="400" y="1640" text-anchor="middle" class="head">IR 私有 SSM 主干</text>
+  <text x="400" y="1673" text-anchor="middle" class="code">I_s → Linear(64→128)</text>
+  <text x="400" y="1702" text-anchor="middle" class="code">→ DWConv1d(k=4) → SiLU</text>
+  <text x="400" y="1732" text-anchor="middle" class="code">→ x_proj→(Δ:4,B:16,C:16)</text>
+  <text x="400" y="1761" text-anchor="middle" class="small">IR 独立 A_log、D_skip、Δ 投影</text>
+  <rect x="2545" y="1605" width="510" height="185" class="box" fill="#f6f1fb" stroke="#a07bc8"/>
+  <text x="2800" y="1640" text-anchor="middle" class="head">VI 私有 SSM 主干</text>
+  <text x="2800" y="1673" text-anchor="middle" class="code">V_s → Linear(64→128)</text>
+  <text x="2800" y="1702" text-anchor="middle" class="code">→ DWConv1d(k=4) → SiLU</text>
+  <text x="2800" y="1732" text-anchor="middle" class="code">→ x_proj→(Δ:4,B:16,C:16)</text>
+  <text x="2800" y="1761" text-anchor="middle" class="small">VI 独立 A_log、D_skip、Δ 投影</text>
+
+  <rect x="900" y="1605" width="1400" height="185" class="box" fill="#fff1f3" stroke="#cc6177" stroke-width="3"/>
+  <text x="1600" y="1640" text-anchor="middle" class="head">共同特征构造与共同 Z 门控</text>
+  <text x="1600" y="1675" text-anchor="middle" class="code">M = I_s + V_s + I_s ⊙ V_s  (B,L,64)</text>
+  <text x="1600" y="1708" text-anchor="middle" class="code">Z = common_z_proj( LayerNorm(M) )  (B,L,128)</text>
+  <text x="1600" y="1740" text-anchor="middle" class="body">同一个 Z 同时传入 IR、VI 的 selective_scan_fn；它提供共同语义的动态输出门控。</text>
+  <text x="1600" y="1769" text-anchor="middle" class="small">注意：共同的是 Z，不是 IR/VI 的卷积、状态参数或输出投影；这些参数均按模态独立。</text>
+  <path d="M655 1698 H888" class="irf"/><path d="M2545 1698 H2312" class="vif"/>
+
+  <path d="M400 1790 V1840 H1030" class="irf"/><path d="M2800 1790 V1840 H2170" class="vif"/>
+  <path d="M1300 1790 V1840 H1180" class="cf"/><path d="M1900 1790 V1840 H2020" class="cf"/>
+  <rect x="860" y="1840" width="1480" height="135" class="box" fill="#f8fbfd" stroke="#799fba" stroke-width="3"/>
+  <text x="1600" y="1875" text-anchor="middle" class="head">两条独立 Selective Scan，使用同一共同 Z</text>
+  <text x="1600" y="1910" text-anchor="middle" class="code">Y_I = Scan(IR_x, Δ_I, A_I, B_I, C_I, D_I, z=Z)  Y_V = Scan(VI_x, Δ_V, A_V, B_V, C_V, D_V, z=Z)</text>
+  <text x="1600" y="1943" text-anchor="middle" class="small">输出：(B,L,128) → LayerNorm(128) → Linear(128→64)；四方向完成后复原并分别相加为 C_I、C_V。</text>
+  <text x="1600" y="2035" text-anchor="middle" class="body">“共同特征引导”的含义：仅当两个模态的联合表征支持时，共同 Z 才会以同一门控条件强化或抑制双方的长程状态空间响应。</text>
+  <text x="1600" y="2073" text-anchor="middle" class="small">与 GLCM 的区别：GLCM 用显式的另一模态 Sigmoid 注意力图相乘；CMFB 在共同全局 SSM 内以共享 Z 进行隐式耦合，随后才执行最终融合。</text>
+</svg>
