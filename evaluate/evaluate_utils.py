@@ -192,10 +192,14 @@ def run_fusion_prediction(
     decoder_input_mode = 'none'
 
     with torch.no_grad():
-        feature_v_g, feature_v_l, _ = bundle['encoder'](vis_tensor)
-        feature_i_g, feature_i_l, _ = bundle['encoder'](ir_tensor)
-        feature_i_e, feature_v_e = bundle['modal_enhance'](
-            feature_i_g, feature_i_l, feature_v_g, feature_v_l)
+        if bundle['modal_enhance'] is None:
+            feature_v_e = bundle['encoder'](vis_tensor)
+            feature_i_e = bundle['encoder'](ir_tensor)
+        else:
+            feature_v_g, feature_v_l, _ = bundle['encoder'](vis_tensor)
+            feature_i_g, feature_i_l, _ = bundle['encoder'](ir_tensor)
+            feature_i_e, feature_v_e = bundle['modal_enhance'](
+                feature_i_g, feature_i_l, feature_v_g, feature_v_l)
         feature_f_e = bundle['cross_mamba_fusion'](feature_i_e, feature_v_e)
         fused_tensor, _ = bundle['decoder'](feature_f_e)
         fused_tensor = _normalize_fused_tensor(fused_tensor)

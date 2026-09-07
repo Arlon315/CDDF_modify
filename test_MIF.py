@@ -47,10 +47,14 @@ def main():
                 data_ir = torch.FloatTensor(data_ir).to(device)
                 data_vis = torch.FloatTensor(data_vis).to(device)
 
-                feature_v_g, feature_v_l, _ = encoder(data_vis)
-                feature_i_g, feature_i_l, _ = encoder(data_ir)
-                feature_i_e, feature_v_e = modal_enhance(
-                    feature_i_g, feature_i_l, feature_v_g, feature_v_l)
+                if modal_enhance is None:
+                    feature_v_e = encoder(data_vis)
+                    feature_i_e = encoder(data_ir)
+                else:
+                    feature_v_g, feature_v_l, _ = encoder(data_vis)
+                    feature_i_g, feature_i_l, _ = encoder(data_ir)
+                    feature_i_e, feature_v_e = modal_enhance(
+                        feature_i_g, feature_i_l, feature_v_g, feature_v_l)
                 feature_f_e = cross_mamba_fusion(feature_i_e, feature_v_e)
                 fused, _ = decoder(feature_f_e)
                 fused = (fused - fused.min()) / (fused.max() - fused.min())

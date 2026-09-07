@@ -7,13 +7,15 @@ from .net import AKCBlock
 
 
 class CommenMambaFusionBlock(nn.Module):
-    def __init__(self, dim=64):
+    def __init__(self, dim=64, use_private=True):
         super(CommenMambaFusionBlock, self).__init__()
+        self.use_private = use_private
         self.ir_norm = LayerNorm(dim, 'WithBias')
         self.vi_norm = LayerNorm(dim, 'WithBias')
         self.cross_mixer = GlobalMamba4Path(dim=dim)
-        self.ir_private = AKCBlock(dim)
-        self.vi_private = AKCBlock(dim)
+        if use_private:
+            self.ir_private = AKCBlock(dim)
+            self.vi_private = AKCBlock(dim)
         self.fusion_proj = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=True)
         self._init_fusion_sum(dim)
 
@@ -37,8 +39,8 @@ class CommenMambaFusionBlock(nn.Module):
             self.ir_norm(ir_feature),
             self.vi_norm(vi_feature),
         )
-        p_ir = self.ir_private(ir_feature)
-        p_vi = self.vi_private(vi_feature)
-        ir_enhanced = ir_cross + p_ir
-        vi_enhanced = vi_cross + p_vi
+        ir_enhanced, vi_enhanced = ir_cross, vi_cross
+        if self.use_private:
+            ir_enhanced = ir_enhanced + self.ir_private(ir_feature)
+            vi_enhanced = vi_enhanced + self.vi_private(vi_feature)
         return self.fusion_proj(torch.cat((ir_enhanced, vi_enhanced), dim=1))

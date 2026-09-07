@@ -241,3 +241,10 @@ test_img/
 Metric_Python/
 tmp/
 GLoC-Mamba_方法论草稿.md
+GLoC-Mamba_Word公式代码.md
+
+tmp/
+tests/
+ABLATION.md
+ABlationStudy.ipynb
+.codex_review/

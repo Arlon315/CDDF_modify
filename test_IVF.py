@@ -122,21 +122,28 @@ def main():
                 data_IR,data_VIS = torch.FloatTensor(data_IR),torch.FloatTensor(data_VIS)
                 data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
 
-                feature_V_G, feature_V_L, _ = Encoder(data_VIS)
-                feature_I_G, feature_I_L, _ = Encoder(data_IR)
-                feature_I_E, feature_V_E = ModalEnhanceLayer(
-                    feature_I_G, feature_I_L, feature_V_G, feature_V_L)
+                feature_vis = {}
+                if ModalEnhanceLayer is None:
+                    feature_V_E = Encoder(data_VIS)
+                    feature_I_E = Encoder(data_IR)
+                else:
+                    feature_V_G, feature_V_L, _ = Encoder(data_VIS)
+                    feature_I_G, feature_I_L, _ = Encoder(data_IR)
+                    feature_I_E, feature_V_E = ModalEnhanceLayer(
+                        feature_I_G, feature_I_L, feature_V_G, feature_V_L)
+                    feature_vis.update({
+                        'feature_V_L': feature_V_L,
+                        'feature_I_L': feature_I_L,
+                        'feature_V_G': feature_V_G,
+                        'feature_I_G': feature_I_G,
+                    })
                 feature_F_E = CrossMambaFusionLayer(feature_I_E, feature_V_E)
                 data_Fuse, out_enc_level0 = Decoder(feature_F_E)
-                feature_vis = {
-                    'feature_V_L': feature_V_L,
-                    'feature_I_L': feature_I_L,
-                    'feature_V_G': feature_V_G,
-                    'feature_I_G': feature_I_G,
+                feature_vis.update({
                     'feature_V_E': feature_V_E,
                     'feature_I_E': feature_I_E,
                     'out_enc_level0': out_enc_level0,
-                }
+                })
                 save_feature_visualizations(feature_vis, img_name, feature_vis_folder, max_channels=args.feature_channels)
                 data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
                 fi = np.uint8(np.round(np.squeeze((data_Fuse * 255).cpu().numpy())))

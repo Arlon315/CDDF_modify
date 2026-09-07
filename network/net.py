@@ -576,8 +576,10 @@ class Restormer_Encoder(nn.Module):
         ffn_expansion_factor=2,
         bias=False,
         LayerNorm_type='WithBias',
+        use_global_local=True,
     ):
         super(Restormer_Encoder, self).__init__()
+        self.use_global_local = use_global_local
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
         self.encoder_level1 = nn.Sequential(*make_feature_blocks(
             'restormer',
@@ -588,15 +590,18 @@ class Restormer_Encoder(nn.Module):
             bias,
             LayerNorm_type,
         ))
-        self.globalFeature = SpatialMambaGlobalFeature(
-            dim=dim,
-            num_layers=1,
-        )
-        from .LocalFeatureCGA import AKDECGALocalFeatureExtraction
-        self.localFeature = AKDECGALocalFeatureExtraction(dim=dim)
+        if use_global_local:
+            self.globalFeature = SpatialMambaGlobalFeature(
+                dim=dim,
+                num_layers=1,
+            )
+            from .LocalFeatureCGA import AKDECGALocalFeatureExtraction
+            self.localFeature = AKDECGALocalFeatureExtraction(dim=dim)
 
     def forward(self, inp_img):
         out_enc_level1 = self.encoder_level1(self.patch_embed(inp_img))
+        if not self.use_global_local:
+            return out_enc_level1
         global_feature = self.globalFeature(out_enc_level1)
         local_feature = self.localFeature(out_enc_level1)
         return global_feature, local_feature, out_enc_level1

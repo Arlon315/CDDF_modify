@@ -1,4 +1,4 @@
-"""Construction and checkpoint loading for the fixed GLoC-Mamba network."""
+"""Construction and checkpoint loading for GLoC-Mamba and its ablations."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ from typing import Any, Dict, Mapping
 import torch
 import torch.nn as nn
 
-from .CMFB import CommenMambaFusionBlock
-from .GLCM_Mamba import GlobalLocalCrossModalMambaBlock
-from .net import build_current_glcm_modules, require_current_glcm_checkpoint
+from .ablation import build_ablation_modules, require_ablation_checkpoint
 
 
 def _strip_module_prefix(state_dict: Mapping[str, Any]) -> Dict[str, Any]:
@@ -29,29 +27,29 @@ def build_current_glcm_model(
     *,
     data_parallel: bool = False,
 ) -> Dict[str, Any]:
-    """Build the current network and strictly load a compatible checkpoint."""
-    require_current_glcm_checkpoint(checkpoint)
+    """Select the saved ablation (legacy checkpoints use 0) and load strictly."""
+    ablation = require_ablation_checkpoint(checkpoint)
 
-    encoder, decoder = build_current_glcm_modules()
-    modal_enhance = GlobalLocalCrossModalMambaBlock(dim=64)
-    cross_mamba_fusion = CommenMambaFusionBlock(dim=64)
+    encoder, decoder, modal_enhance, cross_mamba_fusion = build_ablation_modules(ablation)
 
     _load_state(encoder, checkpoint, 'DIDF_Encoder')
     _load_state(decoder, checkpoint, 'DIDF_Decoder')
-    _load_state(modal_enhance, checkpoint, 'ModalEnhanceLayer')
+    if modal_enhance is not None:
+        _load_state(modal_enhance, checkpoint, 'ModalEnhanceLayer')
     _load_state(cross_mamba_fusion, checkpoint, 'CrossMambaFusionLayer')
 
     modules = {
         'encoder': encoder.to(device),
         'decoder': decoder.to(device),
-        'modal_enhance': modal_enhance.to(device),
+        'modal_enhance': modal_enhance.to(device) if modal_enhance is not None else None,
         'cross_mamba_fusion': cross_mamba_fusion.to(device),
     }
     if data_parallel:
-        modules = {name: nn.DataParallel(module) for name, module in modules.items()}
+        modules = {name: nn.DataParallel(module) if module is not None else None for name, module in modules.items()}
 
     for module in modules.values():
-        module.eval()
+        if module is not None:
+            module.eval()
 
     return modules
 
