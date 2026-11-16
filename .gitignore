@@ -237,6 +237,8 @@ test_img/
 # Local editor folders
 .idea/
 .vscode/
+.agents/
+architecture_diagrams/
 
 Metric_Python/
 tmp/
@@ -248,5 +250,10 @@ tests/
 ABLATION.md
 ABlationStudy.ipynb
 .codex_review/
+
+check_checkpoint.py
+compute_flops.py
+evaluate_performance.py
+
 
 outputs/
